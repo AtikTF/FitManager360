@@ -40,13 +40,13 @@ import axios from 'axios';
 const Dashboard = () => {
   const { user } = useAuth();
   const [dashboardData, setDashboardData] = useState({
-    totalExercises: 0,
+    totalRoutines: 0,
     stats: {
-      byMuscleGroup: [],
+      byCategory: [],
       byDifficulty: [],
-      byEquipment: [],
+      byDuration: [],
     },
-    recentExercises: [],
+    recentRoutines: [],
   });
   const [loading, setLoading] = useState(true);
   const [progressData, setProgressData] = useState([]);
@@ -58,15 +58,97 @@ const Dashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
-      const response = await axios.get('/api/exercises/stats');
-      setDashboardData(response.data);
+      // Obtener rutinas del usuario
+      const routinesResponse = await axios.get('/api/routines');
+      const routines = routinesResponse.data.routines || [];
+      
+      // Procesar estadísticas de rutinas
+      const processedData = processRoutineStats(routines);
+      setDashboardData(processedData);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
+      setDashboardData({
+        totalRoutines: 0,
+        stats: {
+          byCategory: [],
+          byDifficulty: [],
+          byDuration: [],
+        },
+        recentRoutines: [],
+      });
     } finally {
       setLoading(false);
     }
   };
 
+  const processRoutineStats = (routines) => {
+    // Estadísticas por categoría
+    const categoryStats = {};
+    routines.forEach(routine => {
+      const category = routine.category || 'sin_categoria';
+      categoryStats[category] = (categoryStats[category] || 0) + 1;
+    });
+    const byCategoryArray = Object.entries(categoryStats).map(([key, value]) => ({
+      _id: key,
+      count: value
+    }));
+
+    // Estadísticas por dificultad
+    const difficultyStats = {};
+    routines.forEach(routine => {
+      const difficulty = routine.difficulty || 'sin_dificultad';
+      difficultyStats[difficulty] = (difficultyStats[difficulty] || 0) + 1;
+    });
+    const byDifficultyArray = Object.entries(difficultyStats).map(([key, value]) => ({
+      _id: key,
+      count: value
+    }));
+
+    // Estadísticas por duración (rangos)
+    const durationStats = {
+      'corta': 0,    // 0-30 min
+      'media': 0,    // 31-60 min
+      'larga': 0,    // 61+ min
+    };
+    routines.forEach(routine => {
+      const duration = routine.estimatedDuration || 0;
+      if (duration <= 30) {
+        durationStats['corta']++;
+      } else if (duration <= 60) {
+        durationStats['media']++;
+      } else {
+        durationStats['larga']++;
+      }
+    });
+    const byDurationArray = Object.entries(durationStats).map(([key, value]) => ({
+      _id: key,
+      count: value
+    }));
+
+    // Rutinas recientes (últimas 5)
+    const recentRoutines = routines
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 5)
+      .map(routine => ({
+        id: routine._id,
+        name: routine.name,
+        category: routine.category,
+        difficulty: routine.difficulty,
+        estimatedDuration: routine.estimatedDuration,
+        exerciseCount: routine.exercises?.length || 0,
+        createdAt: routine.createdAt
+      }));
+
+    return {
+      totalRoutines: routines.length,
+      stats: {
+        byCategory: byCategoryArray,
+        byDifficulty: byDifficultyArray,
+        byDuration: byDurationArray,
+      },
+      recentRoutines,
+    };
+  };
   const fetchProgressData = async () => {
     try {
       const response = await axios.get(
@@ -88,6 +170,38 @@ const Dashboard = () => {
     }
   };
 
+  const getCategoryLabel = (category) => {
+    const labels = {
+      strength: 'Fuerza',
+      cardio: 'Cardio',
+      flexibility: 'Flexibilidad',
+      sports: 'Deportes',
+      rehabilitation: 'Rehabilitación',
+      weight_loss: 'Pérdida de peso',
+      muscle_gain: 'Ganancia muscular',
+      sin_categoria: 'Sin categoría',
+    };
+    return labels[category] || category;
+  };
+
+  const getDifficultyLabel = (difficulty) => {
+    const labels = {
+      beginner: 'Principiante',
+      intermediate: 'Intermedio',
+      advanced: 'Avanzado',
+      sin_dificultad: 'Sin dificultad',
+    };
+    return labels[difficulty] || difficulty;
+  };
+
+  const getDurationLabel = (duration) => {
+    const labels = {
+      corta: 'Corta (≤30 min)',
+      media: 'Media (31-60 min)',
+      larga: 'Larga (>60 min)',
+    };
+    return labels[duration] || duration;
+  };
   const StatCard = ({ title, value, icon, color, subtitle }) => (
     <Card
       elevation={2}
@@ -280,11 +394,11 @@ const Dashboard = () => {
           md={3}
         >
           <StatCard
-            title='Total de Ejercicios'
-            value={dashboardData.totalExercises}
+            title='Total de Rutinas'
+            value={dashboardData.totalRoutines}
             icon={<FitnessCenter />}
             color='primary.main'
-            subtitle='Ejercicios registrados'
+            subtitle='Rutinas creadas'
           />
         </Grid>
         <Grid
@@ -294,11 +408,11 @@ const Dashboard = () => {
           md={3}
         >
           <StatCard
-            title='Grupos Musculares'
-            value={dashboardData.stats.byMuscleGroup.length}
+            title='Categorías'
+            value={dashboardData.stats.byCategory.length}
             icon={<Timeline />}
             color='green'
-            subtitle='Tipos de grupo muscular'
+            subtitle='Tipos de categoría'
           />
         </Grid>
         <Grid
@@ -322,11 +436,11 @@ const Dashboard = () => {
           md={3}
         >
           <StatCard
-            title='Equipos'
-            value={dashboardData.stats.byEquipment.length}
-            icon={<MonitorWeight />}
+            title='Duraciones'
+            value={dashboardData.stats.byDuration.length}
+            icon={<Timer />}
             color='blue'
-            subtitle='Tipos de equipo'
+            subtitle='Rangos de duración'
           />
         </Grid>
 
@@ -341,13 +455,16 @@ const Dashboard = () => {
               variant='h6'
               gutterBottom
             >
-              Ejercicios por Grupo Muscular
+              Rutinas por Categoría
             </Typography>
             <ResponsiveContainer
               width='100%'
               height={250}
             >
-              <BarChart data={dashboardData.stats.byMuscleGroup}>
+              <BarChart data={dashboardData.stats.byCategory.map(item => ({
+                ...item,
+                _id: getCategoryLabel(item._id)
+              }))}>
                 <CartesianGrid strokeDasharray='3 3' />
                 <XAxis dataKey='_id' />
                 <YAxis allowDecimals={false} />
@@ -370,13 +487,16 @@ const Dashboard = () => {
               variant='h6'
               gutterBottom
             >
-              Ejercicios por Dificultad
+              Rutinas por Dificultad
             </Typography>
             <ResponsiveContainer
               width='100%'
               height={250}
             >
-              <BarChart data={dashboardData.stats.byDifficulty}>
+              <BarChart data={dashboardData.stats.byDifficulty.map(item => ({
+                ...item,
+                _id: getDifficultyLabel(item._id)
+              }))}>
                 <CartesianGrid strokeDasharray='3 3' />
                 <XAxis dataKey='_id' />
                 <YAxis allowDecimals={false} />
@@ -399,13 +519,16 @@ const Dashboard = () => {
               variant='h6'
               gutterBottom
             >
-              Ejercicios por Equipo
+              Rutinas por Duración
             </Typography>
             <ResponsiveContainer
               width='100%'
               height={250}
             >
-              <BarChart data={dashboardData.stats.byEquipment}>
+              <BarChart data={dashboardData.stats.byDuration.map(item => ({
+                ...item,
+                _id: getDurationLabel(item._id)
+              }))}>
                 <CartesianGrid strokeDasharray='3 3' />
                 <XAxis dataKey='_id' />
                 <YAxis allowDecimals={false} />
@@ -419,7 +542,7 @@ const Dashboard = () => {
           </Paper>
         </Grid>
 
-        {/* Ejercicios recientes */}
+        {/* Rutinas recientes */}
         <Grid
           item
           xs={12}
@@ -430,36 +553,41 @@ const Dashboard = () => {
               variant='h6'
               gutterBottom
             >
-              Ejercicios Recientes
+              Rutinas Recientes
             </Typography>
             <Box sx={{ maxHeight: 300, overflowY: 'auto' }}>
-              {dashboardData.recentExercises.length > 0 ? (
-                dashboardData.recentExercises.map((ex) => (
+              {dashboardData.recentRoutines.length > 0 ? (
+                dashboardData.recentRoutines.map((routine) => (
                   <Card
-                    key={ex.id}
+                    key={routine.id}
                     elevation={1}
                     sx={{ mb: 2 }}
                   >
                     <CardContent>
-                      <Typography variant='h6'>{ex.name}</Typography>
+                      <Typography variant='h6'>{routine.name}</Typography>
                       <Typography
                         variant='body2'
                         color='text.secondary'
                       >
-                        Dificultad: {ex.difficulty}
+                        Categoría: {getCategoryLabel(routine.category)}
                       </Typography>
                       <Typography
                         variant='body2'
                         color='text.secondary'
                       >
-                        Grupos Musculares: {ex.muscleGroups.join(', ')}
+                        Dificultad: {getDifficultyLabel(routine.difficulty)}
                       </Typography>
                       <Typography
                         variant='body2'
                         color='text.secondary'
                       >
-                        Creado:{' '}
-                        {new Date(ex.createdAt).toLocaleDateString('es-ES')}
+                        Duración: {routine.estimatedDuration} min | Ejercicios: {routine.exerciseCount}
+                      </Typography>
+                      <Typography
+                        variant='body2'
+                        color='text.secondary'
+                      >
+                        Creada: {new Date(routine.createdAt).toLocaleDateString('es-ES')}
                       </Typography>
                     </CardContent>
                   </Card>
@@ -469,7 +597,7 @@ const Dashboard = () => {
                   variant='body2'
                   color='text.secondary'
                 >
-                  No hay ejercicios recientes.
+                  No hay rutinas recientes.
                 </Typography>
               )}
             </Box>

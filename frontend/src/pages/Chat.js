@@ -1,1211 +1,822 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useSocket } from '../contexts/SocketContext';
 import {
-  Box,
+  Container,
   Grid,
-  Card,
-  CardContent,
+  Paper,
   Typography,
+  Box,
+  TextField,
+  Button,
   List,
   ListItem,
   ListItemText,
   ListItemAvatar,
   Avatar,
-  TextField,
-  Button,
-  Paper,
-  Divider,
-  Badge,
   Chip,
+  Divider,
   IconButton,
-  InputAdornment,
-  Fade,
-  Zoom,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Card,
+  CardContent,
+  Badge,
+  Tooltip,
+  Stack,
   Alert,
-  Skeleton,
-  Container,
+  CircularProgress,
+  InputAdornment,
+  Menu,
+  MenuItem,
+  Fade,
+  Slide,
 } from '@mui/material';
-import { 
-  Send, 
-  Circle, 
+import {
+  Send,
+  Add,
+  Person,
+  Chat as ChatIcon,
+  Public,
+  Lock,
+  Group,
   Search,
+  MoreVert,
   EmojiEmotions,
   AttachFile,
-  MoreVert,
-  PersonAdd,
-  Refresh,
+  Phone,
+  VideoCall,
+  Info,
+  Close,
+  Circle,
 } from '@mui/icons-material';
+import { useAuth } from '../contexts/AuthContext';
+import { useSocket } from '../contexts/SocketContext';
 import axios from 'axios';
 
 const Chat = () => {
-  const [onlineUsers, setOnlineUsers] = useState([]);
+  const { user } = useAuth();
+  const { 
+    socket, 
+    connected, 
+    onlineUsers, 
+    messages, 
+    joinRoom, 
+    leaveRoom, 
+    sendMessage, 
+    setMessages 
+  } = useSocket();
+
+  const [rooms, setRooms] = useState([]);
   const [conversations, setConversations] = useState([]);
-  const [activeConversation, setActiveConversation] = useState(null);
-  const [messages, setMessages] = useState([]);
+  const [currentRoom, setCurrentRoom] = useState(null);
   const [newMessage, setNewMessage] = useState('');
-  const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [openCreateRoom, setOpenCreateRoom] = useState(false);
+  const [newRoomData, setNewRoomData] = useState({
+    name: '',
+    description: '',
+    type: 'public'
+  });
   const [searchTerm, setSearchTerm] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const messagesEndRef = useRef(null);
-  const typingTimeoutRef = useRef(null);
-  
-  const { socket, messages: contextMessages, onlineUsers: contextOnlineUsers } = useSocket();
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [tabValue, setTabValue] = useState(0);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
+
+  useEffect(() => {
+    if (user) {
+      fetchRooms();
+      fetchConversations();
+    }
+  }, [user]);
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        setCurrentUser({ 
-          id: payload.id,
-          userId: payload.id,
-          email: payload.email,
-          username: payload.username || payload.email 
-        });
-      } catch (error) {
-        console.error('Error parsing token:', error);
-        setError('Error de autenticación');
-      }
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const fetchRooms = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get('/api/chat/rooms');
+      setRooms(response.data.rooms || []);
+    } catch (error) {
+      console.error('Error fetching rooms:', error);
+      setError('Error al cargar las salas de chat');
+    } finally {
+      setLoading(false);
     }
-  }, []);
-
-  useEffect(() => {
-    if (contextOnlineUsers && Array.isArray(contextOnlineUsers)) {
-      setOnlineUsers(contextOnlineUsers);
-    }
-  }, [contextOnlineUsers]);
-
-  useEffect(() => {
-    if (!socket) return;
-
-    const handleNewMessage = (message) => {
-      if (activeConversation && message.roomId === activeConversation.id) {
-        setMessages(prev => {
-          const exists = prev.some(msg => msg.id === message.id);
-          if (!exists) {
-            return [...prev, message];
-          }
-          return prev;
-        });
-      }
-    };
-
-    const handleUserTyping = (data) => {
-      if (data.userId !== currentUser?.id) {
-        setIsTyping(data.isTyping);
-        if (data.isTyping) {
-          setTimeout(() => setIsTyping(false), 3000);
-        }
-      }
-    };
-
-    socket.on('new-message', handleNewMessage);
-    socket.on('user-typing', handleUserTyping);
-
-    return () => {
-      socket.off('new-message', handleNewMessage);
-      socket.off('user-typing', handleUserTyping);
-    };
-  }, [socket, activeConversation, currentUser]);
-
-  useEffect(() => {
-    fetchConversations();
-    setLoading(false);
-  }, []);
+  };
 
   const fetchConversations = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get('/api/chat/conversations', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const conversations = Array.isArray(response.data) ? response.data : [];
-      setConversations(conversations);
+      const response = await axios.get('/api/chat/conversations');
+      setConversations(response.data || []);
     } catch (error) {
       console.error('Error fetching conversations:', error);
-      setError('Error al cargar las conversaciones');
-      setConversations([]);
     }
   };
 
-  const startConversation = async (userId) => {
+  const handleJoinRoom = async (room) => {
+    if (currentRoom) {
+      leaveRoom(currentRoom._id);
+    }
+    
+    setCurrentRoom(room);
+    joinRoom(room._id);
+    
     try {
-      setError('');
-      const token = localStorage.getItem('token');
-      const response = await axios.post(
-        `/api/chat/users/${userId}/chat`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
-      const conversation = response.data;
-      const normalizedConversation = {
-        ...conversation,
-        id: conversation.roomId || conversation.id
-      };
-      setActiveConversation(normalizedConversation);
-      
-      setConversations(prev => {
-        const existing = prev.find(c => c.id === normalizedConversation.id);
-        if (existing) return prev;
-        return [...prev, normalizedConversation];
-      });
-
-      loadMessages(normalizedConversation.id);
-      
-      if (socket) {
-        socket.emit('join-room', normalizedConversation.id);
-      }
+      const response = await axios.get(`/api/chat/rooms/${room._id}/messages`);
+      setMessages(response.data || []);
     } catch (error) {
-      console.error('Error starting conversation:', error);
-      setError('Error al iniciar la conversación');
+      console.error('Error fetching messages:', error);
     }
   };
 
-  const loadMessages = async (conversationId) => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(
-        `/api/chat/rooms/${conversationId}/messages`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const messagesData = Array.isArray(response.data) ? response.data : [];
-      setMessages(messagesData);
-    } catch (error) {
-      console.error('Error loading messages:', error);
-      setMessages([]);
-    }
-  };
-
-  const sendMessage = async () => {
-    if (!newMessage.trim() || !activeConversation || !socket) return;
-
-    try {
-      socket.emit('send-message', {
-        roomId: activeConversation.id,
-        content: newMessage.trim(),
-        messageType: 'text'
-      });
-
+  const handleSendMessage = () => {
+    if (newMessage.trim() && currentRoom && connected) {
+      sendMessage(currentRoom._id, newMessage.trim());
       setNewMessage('');
-      
-      // Stop typing indicator
-      socket.emit('typing', {
-        roomId: activeConversation.id,
-        isTyping: false
-      });
-    } catch (error) {
-      console.error('Error sending message:', error);
-      setError('Error al enviar el mensaje');
     }
   };
 
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      handleSendMessage();
     }
   };
 
-  const handleTyping = (value) => {
-    setNewMessage(value);
-    
-    if (socket && activeConversation) {
-      socket.emit('typing', {
-        roomId: activeConversation.id,
-        isTyping: value.length > 0
-      });
-
-      // Clear previous timeout
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
-
-      // Set new timeout to stop typing indicator
-      typingTimeoutRef.current = setTimeout(() => {
-        socket.emit('typing', {
-          roomId: activeConversation.id,
-          isTyping: false
-        });
-      }, 1000);
+  const handleCreateRoom = async () => {
+    try {
+      await axios.post('/api/chat/rooms', newRoomData);
+      setOpenCreateRoom(false);
+      setNewRoomData({ name: '', description: '', type: 'public' });
+      fetchRooms();
+    } catch (error) {
+      console.error('Error creating room:', error);
+      setError('Error al crear la sala');
     }
   };
 
-  const selectConversation = (conversation) => {
-    setActiveConversation(conversation);
-    loadMessages(conversation.id);
-    
-    if (socket) {
-      socket.emit('join-room', conversation.id);
+  const handleStartDirectChat = async (targetUser) => {
+    try {
+      const response = await axios.post(`/api/chat/users/${targetUser.userId}/chat`);
+      const { roomId } = response.data;
+      
+      const directRoom = {
+        _id: roomId,
+        name: `Chat con ${targetUser.username}`,
+        type: 'direct',
+        participants: [
+          { userId: user.id, username: user.username },
+          { userId: targetUser.userId, username: targetUser.username }
+        ]
+      };
+      
+      handleJoinRoom(directRoom);
+      fetchConversations();
+    } catch (error) {
+      console.error('Error starting direct chat:', error);
+      setError('Error al iniciar chat directo');
     }
   };
 
-  const getOtherUser = (conversation) => {
-    if (!conversation || !currentUser) return null;
-    
-    if (conversation.otherUser) {
-      return conversation.otherUser;
-    }
-    
-    if (conversation.participants && Array.isArray(conversation.participants)) {
-      return conversation.participants.find(p => p.userId !== currentUser.userId);
-    }
-    
-    return null;
-  };
-
-  const filteredOnlineUsers = onlineUsers.filter(user =>
-    user.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email?.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredOnlineUsers = onlineUsers.filter(u => 
+    u.username.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const formatTime = (dateString) => {
-    return new Date(dateString).toLocaleTimeString('es-ES', {
+  const formatTime = (timestamp) => {
+    return new Date(timestamp).toLocaleTimeString('es-ES', {
       hour: '2-digit',
       minute: '2-digit'
     });
   };
 
-  if (loading) {
-    return (
-      <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-        <Grid container spacing={3}>
-          {[1, 2, 3].map((item) => (
-            <Grid item xs={12} md={4} key={item}>
-              <Skeleton 
-                variant="rectangular" 
-                height={200} 
-                sx={{ 
-                  borderRadius: 3,
-                  backgroundColor: 'rgba(0,0,0,0.04)',
-                  animation: 'pulse 1.5s ease-in-out 0.5s infinite alternate'
-                }} 
-              />
-            </Grid>
-          ))}
-        </Grid>
-      </Container>
-    );
-  }
+  const getRoomIcon = (room) => {
+    switch (room.type) {
+      case 'public':
+        return <Public />;
+      case 'private':
+        return <Lock />;
+      case 'direct':
+        return <Person />;
+      default:
+        return <ChatIcon />;
+    }
+  };
 
   return (
-    <Box sx={{ 
-      flexGrow: 1, 
-      p: 3, 
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      minHeight: '100vh',
-      position: 'relative',
-      '&::before': {
-        content: '""',
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'radial-gradient(circle at 20% 50%, rgba(120, 119, 198, 0.3), transparent 50%), radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3), transparent 50%), radial-gradient(circle at 40% 80%, rgba(120, 119, 255, 0.3), transparent 50%)',
-        pointerEvents: 'none'
-      }
-    }}>
-      <Typography 
-        variant="h3" 
-        gutterBottom
-        sx={{ 
-          fontWeight: 800,
-          color: 'white',
-          textAlign: 'center',
-          mb: 4,
-          textShadow: '0 4px 20px rgba(0,0,0,0.3)',
-          fontSize: { xs: '2rem', md: '3rem' },
-          position: 'relative',
-          zIndex: 1
-        }}
-      >
-        💬 Chat en Tiempo Real
-      </Typography>
-      
-      {error && (
-        <Alert 
-          severity="error" 
-          sx={{ 
-            mb: 3,
-            borderRadius: 3,
-            backdropFilter: 'blur(10px)',
-            backgroundColor: 'rgba(244, 67, 54, 0.9)',
-            color: 'white',
-            border: '1px solid rgba(255,255,255,0.2)',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
-            position: 'relative',
-            zIndex: 1
-          }}
-        >
-          {error}
-        </Alert>
-      )}
-      
-      <Grid container spacing={3} sx={{ height: 'calc(100vh - 200px)', position: 'relative', zIndex: 1 }}>
-        {/* Panel izquierdo */}
-        <Grid item xs={12} md={4}>
-          <Grid container spacing={2} sx={{ height: '100%' }}>
-            {/* Usuarios en línea */}
-            <Grid item xs={12} sx={{ height: '50%' }}>
-              <Card 
-                sx={{ 
-                  height: '100%', 
-                  display: 'flex', 
-                  flexDirection: 'column',
-                  backdropFilter: 'blur(20px)',
-                  backgroundColor: 'rgba(255,255,255,0.15)',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  borderRadius: 4,
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.1)',
-                  overflow: 'hidden',
-                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                  '&:hover': {
-                    transform: 'translateY(-4px)',
-                    boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
-                    backgroundColor: 'rgba(255,255,255,0.2)',
-                  }
-                }}
-              >
-                <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', p: 3 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-                    <Typography variant="h6" sx={{ fontWeight: 700, color: 'white', fontSize: '1.1rem' }}>
-                      🟢 Usuarios en línea ({filteredOnlineUsers.length})
-                    </Typography>
-                    <IconButton 
-                      size="small" 
-                      sx={{ 
-                        color: 'white',
-                        backgroundColor: 'rgba(255,255,255,0.1)',
-                        backdropFilter: 'blur(10px)',
-                        '&:hover': {
-                          backgroundColor: 'rgba(255,255,255,0.2)',
-                          transform: 'rotate(180deg)',
-                        },
-                        transition: 'all 0.3s ease'
-                      }}
-                    >
-                      <Refresh />
-                    </IconButton>
-                  </Box>
-                  
-                  <TextField
-                    size="small"
-                    placeholder="🔍 Buscar usuarios..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <Search sx={{ color: 'rgba(255,255,255,0.8)' }} />
-                        </InputAdornment>
-                      ),
-                    }}
-                    sx={{
-                      mb: 3,
-                      '& .MuiOutlinedInput-root': {
-                        backgroundColor: 'rgba(255,255,255,0.1)',
-                        backdropFilter: 'blur(10px)',
-                        color: 'white',
-                        borderRadius: 3,
-                        transition: 'all 0.3s ease',
-                        '& fieldset': { 
-                          borderColor: 'rgba(255,255,255,0.3)',
-                          borderWidth: 1
-                        },
-                        '&:hover fieldset': { 
-                          borderColor: 'rgba(255,255,255,0.6)',
-                          borderWidth: 2
-                        },
-                        '&.Mui-focused fieldset': { 
-                          borderColor: 'white',
-                          borderWidth: 2,
-                          boxShadow: '0 0 20px rgba(255,255,255,0.3)'
-                        },
-                        '&:hover': {
-                          backgroundColor: 'rgba(255,255,255,0.15)',
-                          transform: 'translateY(-1px)'
-                        }
-                      },
-                      '& .MuiInputBase-input::placeholder': {
-                        color: 'rgba(255,255,255,0.8)',
-                        opacity: 1,
-                      },
-                    }}
-                  />
-                  
-                  <Box sx={{ flexGrow: 1, overflowY: 'auto', pr: 1 }}>
-                    {filteredOnlineUsers.length > 0 ? (
-                      filteredOnlineUsers.map((user, index) => (
-                        <Fade in key={user.userId || user.id} timeout={300 + index * 100}>
-                          <Card
-                            sx={{
-                              mb: 2,
-                              backgroundColor: 'rgba(255,255,255,0.95)',
-                              backdropFilter: 'blur(10px)',
-                              cursor: 'pointer',
-                              borderRadius: 3,
-                              border: '1px solid rgba(255,255,255,0.2)',
-                              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                              '&:hover': {
-                                backgroundColor: 'rgba(255,255,255,1)',
-                                transform: 'translateX(8px) translateY(-2px)',
-                                boxShadow: '0 10px 30px rgba(0,0,0,0.15)',
-                                '& .user-avatar': {
-                                  transform: 'scale(1.1)',
-                                  boxShadow: '0 8px 25px rgba(0,0,0,0.2)'
-                                }
-                              }
-                            }}
-                            onClick={() => startConversation(user.userId || user.id)}
-                          >
-                            <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
-                              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                <Badge
-                                  overlap="circular"
-                                  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                                  badgeContent={
-                                    <Box sx={{
-                                      width: 12,
-                                      height: 12,
-                                      borderRadius: '50%',
-                                      backgroundColor: '#4caf50',
-                                      border: '2px solid white',
-                                      boxShadow: '0 2px 8px rgba(76, 175, 80, 0.4)'
-                                    }} />
-                                  }
-                                >
-                                  <Avatar 
-                                    className="user-avatar"
-                                    sx={{ 
-                                      width: 44, 
-                                      height: 44, 
-                                      mr: 2,
-                                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                                      color: 'white',
-                                      fontWeight: 700,
-                                      fontSize: '1.1rem',
-                                      transition: 'all 0.3s ease',
-                                      boxShadow: '0 4px 15px rgba(0,0,0,0.1)'
-                                    }}
-                                  >
-                                    {user.username ? user.username[0].toUpperCase() : '👤'}
-                                  </Avatar>
-                                </Badge>
-                                <Box sx={{ flexGrow: 1 }}>
-                                  <Typography 
-                                    variant="subtitle2" 
-                                    sx={{ 
-                                      color: 'text.primary', 
-                                      fontWeight: 700,
-                                      fontSize: '0.95rem',
-                                      mb: 0.5
-                                    }}
-                                  >
-                                    {user.username || 'Usuario'}
-                                  </Typography>
-                                  <Chip
-                                    label="En línea"
-                                    size="small"
-                                    sx={{
-                                      backgroundColor: 'rgba(76, 175, 80, 0.1)',
-                                      color: '#2e7d32',
-                                      fontWeight: 600,
-                                      fontSize: '0.75rem',
-                                      height: 20,
-                                      border: '1px solid rgba(76, 175, 80, 0.3)'
-                                    }}
-                                  />
-                                </Box>
-                                <IconButton 
-                                  size="small" 
-                                  sx={{ 
-                                    color: 'primary.main',
-                                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                                    '&:hover': {
-                                      backgroundColor: 'rgba(102, 126, 234, 0.2)',
-                                      transform: 'scale(1.1)'
-                                    },
-                                    transition: 'all 0.2s ease'
-                                  }}
-                                >
-                                  <PersonAdd />
-                                </IconButton>
-                              </Box>
-                            </CardContent>
-                          </Card>
-                        </Fade>
-                      ))
-                    ) : (
-                      <Card sx={{ 
-                        backgroundColor: 'rgba(255,255,255,0.9)',
-                        backdropFilter: 'blur(10px)',
-                        borderRadius: 3,
-                        border: '1px solid rgba(255,255,255,0.2)'
-                      }}>
-                        <CardContent sx={{ textAlign: 'center', py: 4 }}>
-                          <Typography variant="h6" sx={{ color: 'text.secondary', mb: 1, fontSize: '2rem' }}>
-                            😴
-                          </Typography>
-                          <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 500 }}>
-                            {searchTerm ? 'No se encontraron usuarios' : 'No hay usuarios en línea'}
-                          </Typography>
-                        </CardContent>
-                      </Card>
-                    )}
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            {/* Conversaciones activas */}
-            <Grid item xs={12} sx={{ height: '50%' }}>
-              <Card sx={{ 
+    <Box sx={{ backgroundColor: '#f5f5f5', minHeight: '100vh' }}>
+      <Container maxWidth="xl" sx={{ py: 3 }}>
+        <Grid container spacing={3} sx={{ height: 'calc(100vh - 120px)' }}>
+          {/* Sidebar - Salas y Usuarios */}
+          <Grid item xs={12} md={3}>
+            <Paper 
+              sx={{ 
                 height: '100%', 
                 display: 'flex', 
                 flexDirection: 'column',
-                backdropFilter: 'blur(20px)',
-                backgroundColor: 'rgba(255,255,255,0.15)',
-                border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: 4,
-                boxShadow: '0 8px 32px rgba(0,0,0,0.1)',
-                overflow: 'hidden',
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                '&:hover': {
-                  transform: 'translateY(-4px)',
-                  boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
-                  backgroundColor: 'rgba(255,255,255,0.2)',
-                }
-              }}>
-                <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', p: 3 }}>
-                  <Typography variant="h6" gutterBottom sx={{ 
-                    fontWeight: 700, 
-                    color: 'white',
-                    fontSize: '1.1rem',
-                    mb: 3
-                  }}>
-                    💬 Conversaciones ({conversations.length})
+                borderRadius: 3,
+                overflow: 'hidden'
+              }}
+            >
+              {/* Header */}
+              <Box sx={{ p: 2, backgroundColor: 'primary.main', color: 'white' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                    Chat
                   </Typography>
-                  <Box sx={{ flexGrow: 1, overflowY: 'auto', pr: 1 }}>
-                    {conversations.length > 0 ? (
-                      conversations.map((conversation, index) => {
-                        const otherUser = getOtherUser(conversation);
-                        const isActive = activeConversation?.id === conversation.id;
-                        return (
-                          <Zoom in key={conversation.id} timeout={300 + index * 100}>
-                            <Card
-                              sx={{
-                                mb: 2,
-                                cursor: 'pointer',
-                                backgroundColor: isActive ? 'rgba(102, 126, 234, 0.9)' : 'rgba(255,255,255,0.95)',
-                                backdropFilter: 'blur(10px)',
-                                border: isActive ? '2px solid rgba(255,255,255,0.5)' : '1px solid rgba(255,255,255,0.2)',
-                                borderRadius: 3,
-                                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                                transform: isActive ? 'scale(1.02)' : 'scale(1)',
-                                '&:hover': {
-                                  backgroundColor: isActive ? 'rgba(102, 126, 234, 1)' : 'rgba(255,255,255,1)',
-                                  transform: isActive ? 'scale(1.02) translateY(-2px)' : 'translateY(-4px) scale(1.02)',
-                                  boxShadow: '0 15px 35px rgba(0,0,0,0.15)',
-                                  '& .conversation-avatar': {
-                                    transform: 'scale(1.1)',
-                                    boxShadow: '0 8px 25px rgba(0,0,0,0.2)'
-                                  }
-                                }
-                              }}
-                              onClick={() => selectConversation(conversation)}
-                            >
-                              <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                  <Avatar 
-                                    className="conversation-avatar"
-                                    sx={{ 
-                                      width: 44, 
-                                      height: 44, 
-                                      mr: 2,
-                                      background: isActive 
-                                        ? 'linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.1) 100%)'
-                                        : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                                      color: 'white',
-                                      fontWeight: 700,
-                                      fontSize: '1.1rem',
-                                      transition: 'all 0.3s ease',
-                                      boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
-                                      border: isActive ? '2px solid rgba(255,255,255,0.3)' : 'none'
-                                    }}
-                                  >
-                                    {otherUser ? (otherUser.username || otherUser.email || 'U')[0].toUpperCase() : '💬'}
-                                  </Avatar>
-                                  <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                                    <Typography 
-                                      variant="subtitle2" 
-                                      sx={{ 
-                                        fontWeight: 700,
-                                        color: isActive ? 'white' : 'text.primary',
-                                        fontSize: '0.95rem',
-                                        mb: 0.5
-                                      }}
-                                      noWrap
-                                    >
-                                      {otherUser?.username || otherUser?.email || 'Conversación'}
-                                    </Typography>
-                                    <Typography 
-                                      variant="caption" 
-                                      sx={{ 
-                                        color: isActive ? 'rgba(255,255,255,0.8)' : 'text.secondary',
-                                        fontWeight: 500,
-                                        fontSize: '0.8rem'
-                                      }}
-                                      noWrap
-                                    >
-                                      {typeof conversation.lastMessage === 'string' 
-                                        ? conversation.lastMessage 
-                                        : '✨ Iniciar conversación'
-                                      }
-                                    </Typography>
-                                  </Box>
-                                  <IconButton 
-                                    size="small"
-                                    sx={{
-                                      color: isActive ? 'rgba(255,255,255,0.8)' : 'text.secondary',
-                                      backgroundColor: isActive ? 'rgba(255,255,255,0.1)' : 'transparent',
-                                      '&:hover': {
-                                        backgroundColor: isActive ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.05)',
-                                        transform: 'scale(1.1)'
-                                      },
-                                      transition: 'all 0.2s ease'
-                                    }}
-                                  >
-                                    <MoreVert />
-                                  </IconButton>
-                                </Box>
-                              </CardContent>
-                            </Card>
-                          </Zoom>
-                        );
-                      })
-                    ) : (
-                      <Card sx={{
-                        backgroundColor: 'rgba(255,255,255,0.9)',
-                        backdropFilter: 'blur(10px)',
-                        borderRadius: 3,
-                        border: '1px solid rgba(255,255,255,0.2)'
-                      }}>
-                        <CardContent sx={{ textAlign: 'center', py: 4 }}>
-                          <Typography variant="h6" sx={{ fontSize: '2rem', mb: 1 }}>
-                            💭
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, mb: 0.5 }}>
-                            No hay conversaciones
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                            Haz click en un usuario para iniciar una conversación
-                          </Typography>
-                        </CardContent>
-                      </Card>
-                    )}
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
-        </Grid>
-
-        {/* Panel derecho - Chat */}
-        <Grid item xs={12} md={8}>
-          <Card 
-            sx={{ 
-              height: '100%', 
-              display: 'flex', 
-              flexDirection: 'column',
-              backdropFilter: 'blur(20px)',
-              backgroundColor: 'rgba(255,255,255,0.95)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: 4,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.1)',
-              overflow: 'hidden',
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              '&:hover': {
-                boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
-              }
-            }}
-          >
-            {activeConversation ? (
-              <>
-                {/* Header del chat */}
-                <Box
+                  <Button
+                    variant="contained"
+                    size="small"
+                    startIcon={<Add />}
+                    onClick={() => setOpenCreateRoom(true)}
+                    sx={{ 
+                      backgroundColor: 'rgba(255,255,255,0.2)',
+                      '&:hover': { backgroundColor: 'rgba(255,255,255,0.3)' }
+                    }}
+                  >
+                    Nueva Sala
+                  </Button>
+                </Box>
+                
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="Buscar usuarios..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <Search sx={{ color: 'rgba(255,255,255,0.7)' }} />
+                      </InputAdornment>
+                    ),
+                  }}
                   sx={{
-                    p: 3,
-                    borderBottom: 1,
-                    borderColor: 'rgba(255,255,255,0.2)',
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    color: 'white',
-                    position: 'relative',
-                    '&::before': {
-                      content: '""',
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      background: 'radial-gradient(circle at 30% 50%, rgba(255,255,255,0.1), transparent 50%)',
-                      pointerEvents: 'none'
-                    }
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      color: 'white',
+                      '& fieldset': { borderColor: 'rgba(255,255,255,0.3)' },
+                      '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.5)' },
+                      '&.Mui-focused fieldset': { borderColor: 'white' },
+                    },
+                    '& .MuiInputBase-input::placeholder': {
+                      color: 'rgba(255,255,255,0.7)',
+                    },
+                  }}
+                />
+              </Box>
+
+              {/* Usuarios en línea */}
+              <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0' }}>
+                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600, color: 'text.secondary' }}>
+                  Usuarios en línea ({filteredOnlineUsers.length})
+                </Typography>
+                <Box 
+                  sx={{ 
+                    maxHeight: 200, 
+                    overflowY: 'auto',
+                    '&::-webkit-scrollbar': {
+                      width: '6px',
+                    },
+                    '&::-webkit-scrollbar-track': {
+                      background: '#f1f1f1',
+                      borderRadius: '3px',
+                    },
+                    '&::-webkit-scrollbar-thumb': {
+                      background: '#c1c1c1',
+                      borderRadius: '3px',
+                      '&:hover': {
+                        background: '#a8a8a8',
+                      },
+                    },
                   }}
                 >
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      <Avatar sx={{ 
-                        mr: 3, 
-                        width: 50,
-                        height: 50,
-                        bgcolor: 'rgba(255,255,255,0.2)',
-                        backdropFilter: 'blur(10px)',
-                        border: '2px solid rgba(255,255,255,0.3)',
-                        fontWeight: 700,
-                        fontSize: '1.2rem',
-                        transition: 'all 0.3s ease',
-                        '&:hover': {
-                          transform: 'scale(1.1)',
-                          boxShadow: '0 8px 25px rgba(0,0,0,0.3)'
-                        }
-                      }}>
-                        {getOtherUser(activeConversation)?.username?.[0]?.toUpperCase() || '👤'}
-                      </Avatar>
-                      <Box>
-                        <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.2rem', mb: 0.5 }}>
-                          {getOtherUser(activeConversation)?.username || 
-                           getOtherUser(activeConversation)?.email || 'Chat'}
-                        </Typography>
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                          <Box sx={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: '50%',
-                            backgroundColor: '#4caf50',
-                            mr: 1,
-                            boxShadow: '0 0 10px rgba(76, 175, 80, 0.5)',
-                            animation: 'pulse 2s infinite'
-                          }} />
-                          <Typography variant="caption" sx={{ fontWeight: 600, fontSize: '0.85rem' }}>
+                  {filteredOnlineUsers.length > 0 ? (
+                    filteredOnlineUsers.map((onlineUser) => (
+                      <Box
+                        key={onlineUser.userId}
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          p: 1,
+                          borderRadius: 2,
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          '&:hover': {
+                            backgroundColor: 'action.hover',
+                          },
+                        }}
+                        onClick={() => handleStartDirectChat(onlineUser)}
+                      >
+                        <Badge
+                          overlap="circular"
+                          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                          badgeContent={
+                            <Circle 
+                              sx={{ 
+                                fontSize: 12, 
+                                color: 'success.main',
+                                backgroundColor: 'white',
+                                borderRadius: '50%',
+                              }} 
+                            />
+                          }
+                        >
+                          <Avatar 
+                            sx={{ 
+                              width: 36, 
+                              height: 36, 
+                              fontSize: '0.9rem',
+                              backgroundColor: 'primary.main'
+                            }}
+                          >
+                            {onlineUser.username.charAt(0).toUpperCase()}
+                          </Avatar>
+                        </Badge>
+                        <Box sx={{ ml: 2, flex: 1, minWidth: 0 }}>
+                          <Typography 
+                            variant="body2" 
+                            sx={{ 
+                              fontWeight: 500,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {onlineUser.username}
+                          </Typography>
+                          <Typography variant="caption" color="success.main">
                             En línea
                           </Typography>
                         </Box>
                       </Box>
-                    </Box>
-                    <IconButton 
-                      sx={{ 
-                        color: 'white',
-                        backgroundColor: 'rgba(255,255,255,0.1)',
-                        backdropFilter: 'blur(10px)',
-                        '&:hover': {
-                          backgroundColor: 'rgba(255,255,255,0.2)',
-                          transform: 'scale(1.1)'
-                        },
-                        transition: 'all 0.3s ease'
-                      }}
-                    >
-                      <MoreVert />
-                    </IconButton>
-                  </Box>
+                    ))
+                  ) : (
+                    <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
+                      {searchTerm ? 'No se encontraron usuarios' : 'No hay usuarios en línea'}
+                    </Typography>
+                  )}
                 </Box>
+              </Box>
 
-                {/* Mensajes */}
+              {/* Salas de chat */}
+              <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                <Box sx={{ p: 2, pb: 1 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'text.secondary' }}>
+                    Salas de chat
+                  </Typography>
+                </Box>
                 <Box 
                   sx={{ 
-                    flexGrow: 1, 
-                    overflow: 'auto', 
-                    p: 3,
-                    background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
-                    backgroundImage: `
-                      radial-gradient(circle at 25% 25%, rgba(102, 126, 234, 0.05) 0%, transparent 25%),
-                      radial-gradient(circle at 75% 75%, rgba(118, 75, 162, 0.05) 0%, transparent 25%)
-                    `,
-                    position: 'relative'
+                    flex: 1, 
+                    overflowY: 'auto',
+                    px: 2,
+                    '&::-webkit-scrollbar': {
+                      width: '6px',
+                    },
+                    '&::-webkit-scrollbar-track': {
+                      background: '#f1f1f1',
+                      borderRadius: '3px',
+                    },
+                    '&::-webkit-scrollbar-thumb': {
+                      background: '#c1c1c1',
+                      borderRadius: '3px',
+                      '&:hover': {
+                        background: '#a8a8a8',
+                      },
+                    },
                   }}
                 >
-                  {messages.length > 0 ? (
-                    messages.map((message, index) => {
-                      const isOwnMessage = message.senderId === currentUser?.id;
-                      const showAvatar = index === 0 || messages[index - 1].senderId !== message.senderId;
-                      
-                      return (
-                        <Fade in key={message._id || message.id} timeout={300 + index * 50}>
-                          <Box
-                            sx={{
-                              display: 'flex',
-                              justifyContent: isOwnMessage ? 'flex-end' : 'flex-start',
-                              mb: 2,
-                              alignItems: 'flex-end'
-                            }}
-                          >
-                            {!isOwnMessage && showAvatar && (
-                              <Avatar 
+                  {loading ? (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+                      <CircularProgress size={24} />
+                    </Box>
+                  ) : rooms.length > 0 ? (
+                    rooms.map((room) => (
+                      <Card
+                        key={room._id}
+                        sx={{
+                          mb: 1,
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          backgroundColor: currentRoom?._id === room._id ? 'primary.50' : 'white',
+                          border: currentRoom?._id === room._id ? '2px solid' : '1px solid',
+                          borderColor: currentRoom?._id === room._id ? 'primary.main' : 'divider',
+                          '&:hover': {
+                            backgroundColor: currentRoom?._id === room._id ? 'primary.100' : 'action.hover',
+                            transform: 'translateY(-1px)',
+                          },
+                        }}
+                        onClick={() => handleJoinRoom(room)}
+                      >
+                        <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <Box sx={{ mr: 2, color: 'primary.main' }}>
+                              {getRoomIcon(room)}
+                            </Box>
+                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                              <Typography 
+                                variant="body2" 
                                 sx={{ 
-                                  width: 36, 
-                                  height: 36, 
-                                  mr: 2,
-                                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                                  color: 'white',
-                                  fontWeight: 700,
-                                  boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
-                                  transition: 'all 0.3s ease',
-                                  '&:hover': {
-                                    transform: 'scale(1.1)',
-                                    boxShadow: '0 8px 25px rgba(0,0,0,0.2)'
-                                  }
+                                  fontWeight: 600,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap'
                                 }}
                               >
-                                {message.senderUsername?.[0]?.toUpperCase() || '👤'}
-                              </Avatar>
-                            )}
-                            {!isOwnMessage && !showAvatar && (
-                              <Box sx={{ width: 36, mr: 2 }} />
-                            )}
-                            
-                            <Paper
-                              elevation={0}
-                              sx={{
-                                p: 2,
-                                maxWidth: '70%',
-                                background: isOwnMessage 
-                                  ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-                                  : 'rgba(255,255,255,0.9)',
-                                backdropFilter: 'blur(10px)',
-                                border: isOwnMessage 
-                                  ? '1px solid rgba(255,255,255,0.2)'
-                                  : '1px solid rgba(0,0,0,0.1)',
-                                color: isOwnMessage ? 'white' : 'text.primary',
-                                borderRadius: 3,
-                                borderBottomRightRadius: isOwnMessage ? 8 : 20,
-                                borderBottomLeftRadius: isOwnMessage ? 20 : 8,
-                                position: 'relative',
-                                boxShadow: isOwnMessage 
-                                  ? '0 8px 25px rgba(102, 126, 234, 0.3)'
-                                  : '0 4px 15px rgba(0,0,0,0.1)',
-                                transition: 'all 0.3s ease',
-                                '&:hover': {
-                                  transform: 'translateY(-2px)',
-                                  boxShadow: isOwnMessage 
-                                    ? '0 12px 35px rgba(102, 126, 234, 0.4)'
-                                    : '0 8px 25px rgba(0,0,0,0.15)'
-                                },
-                                '&::before': !isOwnMessage ? {
-                                  content: '""',
-                                  position: 'absolute',
-                                  bottom: 0,
-                                  left: -10,
-                                  width: 0,
-                                  height: 0,
-                                  borderLeft: '10px solid transparent',
-                                  borderRight: '10px solid rgba(255,255,255,0.9)',
-                                  borderBottom: '10px solid rgba(255,255,255,0.9)',
-                                } : {},
-                                '&::after': isOwnMessage ? {
-                                  content: '""',
-                                  position: 'absolute',
-                                  bottom: 0,
-                                  right: -10,
-                                  width: 0,
-                                  height: 0,
-                                  borderLeft: '10px solid #764ba2',
-                                  borderRight: '10px solid transparent',
-                                  borderBottom: '10px solid #764ba2',
-                                } : {}
-                              }}
-                            >
-                              {!isOwnMessage && showAvatar && (
-                                <Typography 
-                                  variant="caption" 
-                                  sx={{ 
-                                    color: 'primary.main',
-                                    fontWeight: 700,
-                                    display: 'block',
-                                    mb: 1,
-                                    fontSize: '0.8rem'
-                                  }}
-                                >
-                                  {message.senderUsername || 'Usuario'}
-                                </Typography>
-                              )}
-                              <Typography variant="body1" sx={{ 
-                                wordBreak: 'break-word',
-                                lineHeight: 1.5,
-                                fontSize: '0.95rem'
-                              }}>
-                                {message.content}
+                                {room.name}
                               </Typography>
                               <Typography 
                                 variant="caption" 
-                                sx={{ 
-                                  color: isOwnMessage ? 'rgba(255,255,255,0.8)' : 'text.secondary',
-                                  display: 'block',
-                                  textAlign: 'right',
-                                  mt: 1,
-                                  fontSize: '0.75rem',
-                                  fontWeight: 500
+                                color="text.secondary"
+                                sx={{
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  display: 'block'
                                 }}
                               >
-                                {formatTime(message.createdAt)}
+                                {room.description || 'Sin descripción'}
                               </Typography>
-                            </Paper>
+                            </Box>
+                            <Chip
+                              label={room.participants?.length || 0}
+                              size="small"
+                              color="primary"
+                              variant="outlined"
+                              sx={{ fontSize: '0.7rem', height: 20 }}
+                            />
                           </Box>
-                        </Fade>
-                      );
-                    })
+                        </CardContent>
+                      </Card>
+                    ))
                   ) : (
-                    <Box sx={{ 
-                      textAlign: 'center', 
-                      py: 6,
-                      background: 'rgba(255,255,255,0.5)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: 4,
-                      border: '1px solid rgba(255,255,255,0.2)'
-                    }}>
-                      <Typography variant="h4" sx={{ fontSize: '3rem', mb: 2 }}>
-                        💬
-                      </Typography>
-                      <Typography variant="h6" color="text.secondary" gutterBottom sx={{ fontWeight: 700 }}>
-                        ¡Inicia la conversación!
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                        Envía tu primer mensaje para comenzar a chatear
-                      </Typography>
-                    </Box>
-                  )}
-                  
-                  {isTyping && (
-                    <Fade in>
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                        <Avatar sx={{ 
-                          width: 36, 
-                          height: 36, 
-                          mr: 2, 
-                          bgcolor: 'grey.400',
-                          animation: 'pulse 1.5s infinite'
-                        }}>
-                          <EmojiEmotions />
-                        </Avatar>
-                        <Paper
-                          sx={{
-                            p: 2,
-                            backgroundColor: 'rgba(255,255,255,0.9)',
-                            backdropFilter: 'blur(10px)',
-                            borderRadius: 3,
-                            borderBottomLeftRadius: 8,
-                            border: '1px solid rgba(0,0,0,0.1)',
-                            boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
-                            animation: 'pulse 1.5s infinite'
-                          }}
-                        >
-                          <Typography variant="body2" color="text.secondary" sx={{ 
-                            fontStyle: 'italic',
-                            fontWeight: 500
-                          }}>
-                            ✍️ Escribiendo...
-                          </Typography>
-                        </Paper>
-                      </Box>
-                    </Fade>
-                  )}
-                  
-                  <div ref={messagesEndRef} />
-                </Box>
-
-                {/* Input para escribir mensaje */}
-                <Box 
-                  sx={{ 
-                    p: 3, 
-                    borderTop: 1, 
-                    borderColor: 'rgba(0,0,0,0.1)',
-                    backgroundColor: 'rgba(255,255,255,0.95)',
-                    backdropFilter: 'blur(10px)'
-                  }}
-                >
-                  <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-end' }}>
-                    <IconButton 
-                      color="primary"
-                      sx={{
-                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                        '&:hover': {
-                          backgroundColor: 'rgba(102, 126, 234, 0.2)',
-                          transform: 'scale(1.1)'
-                        },
-                        transition: 'all 0.3s ease'
-                      }}
-                    >
-                      <AttachFile />
-                    </IconButton>
-                    <IconButton 
-                      color="primary"
-                      sx={{
-                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                        '&:hover': {
-                          backgroundColor: 'rgba(102, 126, 234, 0.2)',
-                          transform: 'scale(1.1)'
-                        },
-                        transition: 'all 0.3s ease'
-                      }}
-                    >
-                      <EmojiEmotions />
-                    </IconButton>
-                    <TextField
-                      fullWidth
-                      multiline
-                      maxRows={4}
-                      value={newMessage}
-                      onChange={(e) => handleTyping(e.target.value)}
-                      onKeyPress={handleKeyPress}
-                      placeholder="💭 Escribe un mensaje..."
-                      variant="outlined"
-                      size="small"
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          borderRadius: 4,
-                          backgroundColor: 'rgba(248, 250, 252, 0.8)',
-                          backdropFilter: 'blur(10px)',
-                          border: '1px solid rgba(0,0,0,0.1)',
-                          transition: 'all 0.3s ease',
-                          '& fieldset': {
-                            borderColor: 'rgba(0,0,0,0.1)'
-                          },
-                          '&:hover fieldset': {
-                            borderColor: 'rgba(102, 126, 234, 0.5)'
-                          },
-                          '&.Mui-focused fieldset': {
-                            borderColor: '#667eea',
-                            borderWidth: 2,
-                            boxShadow: '0 0 20px rgba(102, 126, 234, 0.2)'
-                          },
-                          '&:hover': {
-                            backgroundColor: 'rgba(248, 250, 252, 1)',
-                            transform: 'translateY(-1px)'
-                          }
-                        },
-                        '& .MuiInputBase-input::placeholder': {
-                          color: 'rgba(0,0,0,0.6)',
-                          opacity: 1,
-                        }
-                      }}
-                    />
-                    <IconButton 
-                      color="primary" 
-                      onClick={sendMessage}
-                      disabled={!newMessage.trim()}
-                      sx={{
-                        background: newMessage.trim() 
-                          ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-                          : 'linear-gradient(135deg, #e0e7ff 0%, #f1f5f9 100%)',
-                        color: 'white',
-                        width: 48,
-                        height: 48,
-                        boxShadow: newMessage.trim() 
-                          ? '0 4px 15px rgba(102, 126, 234, 0.4)'
-                          : '0 2px 8px rgba(0,0,0,0.1)',
-                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                        '&:hover': {
-                          background: newMessage.trim() 
-                            ? 'linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%)'
-                            : 'linear-gradient(135deg, #e0e7ff 0%, #f1f5f9 100%)',
-                          transform: newMessage.trim() ? 'scale(1.1) rotate(15deg)' : 'none',
-                          boxShadow: newMessage.trim() 
-                            ? '0 8px 25px rgba(102, 126, 234, 0.5)'
-                            : '0 2px 8px rgba(0,0,0,0.1)'
-                        },
-                        '&:disabled': {
-                          background: 'linear-gradient(135deg, #e0e7ff 0%, #f1f5f9 100%)',
-                          color: 'rgba(0,0,0,0.3)',
-                        }
-                      }}
-                    >
-                      <Send />
-                    </IconButton>
-                  </Box>
-                </Box>
-              </>
-            ) : (
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  height: '100%',
-                  textAlign: 'center',
-                  p: 4,
-                  background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%)'
-                }}
-              >
-                <Box sx={{ maxWidth: 400 }}>
-                  <Avatar
-                    sx={{
-                      width: 100,
-                      height: 100,
-                      mx: 'auto',
-                      mb: 3,
-                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                      boxShadow: '0 8px 25px rgba(102, 126, 234, 0.3)',
-                      animation: 'pulse 2s infinite'
-                    }}
-                  >
-                    <Send sx={{ fontSize: 50 }} />
-                  </Avatar>
-                  <Typography variant="h4" gutterBottom sx={{ 
-                    fontWeight: 800,
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    backgroundClip: 'text',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    mb: 2
-                  }}>
-                    💬 Selecciona una conversación
-                  </Typography>
-                  <Typography variant="body1" color="text.secondary" sx={{ 
-                    fontWeight: 500,
-                    fontSize: '1.1rem',
-                    lineHeight: 1.6
-                  }}>
-                    Elige un usuario de la lista para iniciar una conversación increíble
-                  </Typography>
-                  <Box sx={{ 
-                    mt: 3,
-                    p: 2,
-                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                    borderRadius: 3,
-                    border: '1px solid rgba(102, 126, 234, 0.2)'
-                  }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                      💡 Tip: Los usuarios en línea aparecen en tiempo real
+                    <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 3 }}>
+                      No hay salas disponibles
                     </Typography>
-                  </Box>
+                  )}
                 </Box>
               </Box>
-            )}
-          </Card>
-        </Grid>
-      </Grid>
+            </Paper>
+          </Grid>
 
-      <style jsx global>{`
-        @keyframes pulse {
-          0%, 100% {
-            opacity: 1;
-            transform: scale(1);
-          }
-          50% {
-            opacity: 0.8;
-            transform: scale(1.05);
-          }
-        }
-      `}</style>
+          {/* Área de chat principal */}
+          <Grid item xs={12} md={9}>
+            <Paper 
+              sx={{ 
+                height: '100%', 
+                display: 'flex', 
+                flexDirection: 'column',
+                borderRadius: 3,
+                overflow: 'hidden'
+              }}
+            >
+              {currentRoom ? (
+                <>
+                  {/* Header del chat */}
+                  <Box 
+                    sx={{ 
+                      p: 2, 
+                      backgroundColor: 'primary.main', 
+                      color: 'white',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <Box sx={{ mr: 2 }}>
+                        {getRoomIcon(currentRoom)}
+                      </Box>
+                      <Box>
+                        <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                          {currentRoom.name}
+                        </Typography>
+                        <Typography variant="caption" sx={{ opacity: 0.8 }}>
+                          {currentRoom.participants?.length || 0} participantes
+                        </Typography>
+                      </Box>
+                    </Box>
+                    
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <IconButton 
+                        size="small" 
+                        sx={{ color: 'white' }}
+                        disabled
+                      >
+                        <Phone />
+                      </IconButton>
+                      <IconButton 
+                        size="small" 
+                        sx={{ color: 'white' }}
+                        disabled
+                      >
+                        <VideoCall />
+                      </IconButton>
+                      <IconButton 
+                        size="small" 
+                        sx={{ color: 'white' }}
+                        onClick={(e) => setAnchorEl(e.currentTarget)}
+                      >
+                        <MoreVert />
+                      </IconButton>
+                    </Box>
+                  </Box>
+
+                  {/* Área de mensajes */}
+                  <Box 
+                    ref={messagesContainerRef}
+                    sx={{ 
+                      flex: 1, 
+                      overflowY: 'auto',
+                      p: 2,
+                      backgroundColor: '#fafafa',
+                      maxHeight: 'calc(100vh - 300px)',
+                      '&::-webkit-scrollbar': {
+                        width: '8px',
+                      },
+                      '&::-webkit-scrollbar-track': {
+                        background: '#f1f1f1',
+                        borderRadius: '4px',
+                      },
+                      '&::-webkit-scrollbar-thumb': {
+                        background: '#c1c1c1',
+                        borderRadius: '4px',
+                        '&:hover': {
+                          background: '#a8a8a8',
+                        },
+                      },
+                    }}
+                  >
+                    {messages.length > 0 ? (
+                      <Stack spacing={2}>
+                        {messages.map((message, index) => {
+                          const isOwnMessage = message.senderId === user?.id;
+                          const showAvatar = index === 0 || messages[index - 1].senderId !== message.senderId;
+                          
+                          return (
+                            <Fade key={message.id || index} in={true} timeout={300}>
+                              <Box
+                                sx={{
+                                  display: 'flex',
+                                  justifyContent: isOwnMessage ? 'flex-end' : 'flex-start',
+                                  alignItems: 'flex-end',
+                                  gap: 1,
+                                }}
+                              >
+                                {!isOwnMessage && (
+                                  <Avatar
+                                    sx={{
+                                      width: 32,
+                                      height: 32,
+                                      fontSize: '0.8rem',
+                                      backgroundColor: 'primary.main',
+                                      visibility: showAvatar ? 'visible' : 'hidden',
+                                    }}
+                                  >
+                                    {message.senderUsername?.charAt(0).toUpperCase()}
+                                  </Avatar>
+                                )}
+                                
+                                <Box
+                                  sx={{
+                                    maxWidth: '70%',
+                                    minWidth: '100px',
+                                  }}
+                                >
+                                  {!isOwnMessage && showAvatar && (
+                                    <Typography
+                                      variant="caption"
+                                      sx={{
+                                        color: 'text.secondary',
+                                        ml: 1,
+                                        display: 'block',
+                                        mb: 0.5,
+                                      }}
+                                    >
+                                      {message.senderUsername}
+                                    </Typography>
+                                  )}
+                                  
+                                  <Paper
+                                    sx={{
+                                      p: 1.5,
+                                      backgroundColor: isOwnMessage ? 'primary.main' : 'white',
+                                      color: isOwnMessage ? 'white' : 'text.primary',
+                                      borderRadius: 2,
+                                      borderTopLeftRadius: !isOwnMessage && showAvatar ? 1 : 2,
+                                      borderTopRightRadius: isOwnMessage && showAvatar ? 1 : 2,
+                                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                                      wordBreak: 'break-word',
+                                    }}
+                                  >
+                                    <Typography variant="body2" sx={{ lineHeight: 1.4 }}>
+                                      {message.content}
+                                    </Typography>
+                                    <Typography
+                                      variant="caption"
+                                      sx={{
+                                        opacity: 0.7,
+                                        display: 'block',
+                                        textAlign: 'right',
+                                        mt: 0.5,
+                                        fontSize: '0.7rem',
+                                      }}
+                                    >
+                                      {formatTime(message.createdAt)}
+                                    </Typography>
+                                  </Paper>
+                                </Box>
+                              </Box>
+                            </Fade>
+                          );
+                        })}
+                        <div ref={messagesEndRef} />
+                      </Stack>
+                    ) : (
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          height: '100%',
+                          color: 'text.secondary',
+                        }}
+                      >
+                        <ChatIcon sx={{ fontSize: 64, mb: 2, opacity: 0.5 }} />
+                        <Typography variant="h6" gutterBottom>
+                          No hay mensajes aún
+                        </Typography>
+                        <Typography variant="body2">
+                          Sé el primero en enviar un mensaje en esta sala
+                        </Typography>
+                      </Box>
+                    )}
+                  </Box>
+
+                  {/* Input de mensaje */}
+                  <Box sx={{ p: 2, backgroundColor: 'white', borderTop: '1px solid #e0e0e0' }}>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end' }}>
+                      <IconButton size="small" disabled>
+                        <AttachFile />
+                      </IconButton>
+                      <IconButton size="small" disabled>
+                        <EmojiEmotions />
+                      </IconButton>
+                      <TextField
+                        fullWidth
+                        multiline
+                        maxRows={4}
+                        placeholder="Escribe un mensaje..."
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        disabled={!connected}
+                        sx={{
+                          '& .MuiOutlinedInput-root': {
+                            borderRadius: 3,
+                            backgroundColor: '#f8f9fa',
+                          },
+                        }}
+                      />
+                      <Button
+                        variant="contained"
+                        onClick={handleSendMessage}
+                        disabled={!newMessage.trim() || !connected}
+                        sx={{
+                          minWidth: 48,
+                          height: 48,
+                          borderRadius: 3,
+                          px: 2,
+                        }}
+                      >
+                        <Send />
+                      </Button>
+                    </Box>
+                    
+                    {!connected && (
+                      <Alert severity="warning" sx={{ mt: 1 }}>
+                        Desconectado del servidor. Reintentando conexión...
+                      </Alert>
+                    )}
+                  </Box>
+                </>
+              ) : (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: '100%',
+                    color: 'text.secondary',
+                    p: 4,
+                  }}
+                >
+                  <ChatIcon sx={{ fontSize: 120, mb: 3, opacity: 0.3 }} />
+                  <Typography variant="h4" gutterBottom sx={{ fontWeight: 300 }}>
+                    Bienvenido al Chat
+                  </Typography>
+                  <Typography variant="body1" sx={{ textAlign: 'center', maxWidth: 400, mb: 3 }}>
+                    Selecciona una sala de chat o inicia una conversación con un usuario en línea para comenzar
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    startIcon={<Add />}
+                    onClick={() => setOpenCreateRoom(true)}
+                    size="large"
+                  >
+                    Crear Nueva Sala
+                  </Button>
+                </Box>
+              )}
+            </Paper>
+          </Grid>
+        </Grid>
+
+        {/* Error Alert */}
+        {error && (
+          <Alert 
+            severity="error" 
+            sx={{ mt: 2 }} 
+            onClose={() => setError('')}
+          >
+            {error}
+          </Alert>
+        )}
+
+        {/* Create Room Dialog */}
+        <Dialog 
+          open={openCreateRoom} 
+          onClose={() => setOpenCreateRoom(false)}
+          maxWidth="sm"
+          fullWidth
+        >
+          <DialogTitle>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              Crear Nueva Sala
+            </Typography>
+          </DialogTitle>
+          <DialogContent>
+            <Stack spacing={3} sx={{ mt: 1 }}>
+              <TextField
+                fullWidth
+                label="Nombre de la sala"
+                value={newRoomData.name}
+                onChange={(e) => setNewRoomData({ ...newRoomData, name: e.target.value })}
+                required
+              />
+              <TextField
+                fullWidth
+                label="Descripción"
+                value={newRoomData.description}
+                onChange={(e) => setNewRoomData({ ...newRoomData, description: e.target.value })}
+                multiline
+                rows={3}
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions sx={{ p: 3 }}>
+            <Button onClick={() => setOpenCreateRoom(false)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="contained"
+              onClick={handleCreateRoom}
+              disabled={!newRoomData.name.trim()}
+            >
+              Crear Sala
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Room Menu */}
+        <Menu
+          anchorEl={anchorEl}
+          open={Boolean(anchorEl)}
+          onClose={() => setAnchorEl(null)}
+        >
+          <MenuItem onClick={() => setAnchorEl(null)}>
+            <Info sx={{ mr: 2 }} />
+            Información de la sala
+          </MenuItem>
+          <MenuItem onClick={() => setAnchorEl(null)}>
+            <Group sx={{ mr: 2 }} />
+            Ver participantes
+          </MenuItem>
+        </Menu>
+      </Container>
     </Box>
   );
 };

@@ -33,6 +33,18 @@ import {
   ListItemText,
   ListItemIcon,
   Skeleton,
+  FormControlLabel,
+  Switch,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Tooltip,
 } from '@mui/material';
 import {
   Add,
@@ -52,6 +64,9 @@ import {
   StarBorder,
   Share,
   ContentCopy,
+  RemoveCircle,
+  AddCircle,
+  DragIndicator,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
@@ -139,6 +154,7 @@ const Routines = () => {
         isPublic: routine.isPublic,
         exercises: (routine.exercises || []).map((ex, idx) => ({
           exercise: typeof ex.exercise === 'object' ? ex.exercise._id : ex.exercise,
+          exerciseName: typeof ex.exercise === 'object' ? ex.exercise.name : 'Ejercicio',
           sets: (ex.sets || []).map((set) => ({
             reps: set.reps ?? '',
             weight: set.weight ?? '',
@@ -168,8 +184,79 @@ const Routines = () => {
     setSelectedRoutine(null);
   };
 
+  const handleAddExercise = () => {
+    const newExercise = {
+      exercise: '',
+      exerciseName: '',
+      sets: [{ reps: '', weight: '', duration: '', rest: '' }],
+      order: formData.exercises.length,
+    };
+    setFormData({
+      ...formData,
+      exercises: [...formData.exercises, newExercise],
+    });
+  };
+
+  const handleRemoveExercise = (index) => {
+    const updatedExercises = formData.exercises.filter((_, i) => i !== index);
+    setFormData({
+      ...formData,
+      exercises: updatedExercises,
+    });
+  };
+
+  const handleExerciseChange = (exerciseIndex, field, value) => {
+    const updatedExercises = [...formData.exercises];
+    if (field === 'exercise') {
+      const selectedExercise = availableExercises.find(ex => ex._id === value);
+      updatedExercises[exerciseIndex].exercise = value;
+      updatedExercises[exerciseIndex].exerciseName = selectedExercise ? selectedExercise.name : '';
+    } else {
+      updatedExercises[exerciseIndex][field] = value;
+    }
+    setFormData({
+      ...formData,
+      exercises: updatedExercises,
+    });
+  };
+
+  const handleAddSet = (exerciseIndex) => {
+    const updatedExercises = [...formData.exercises];
+    updatedExercises[exerciseIndex].sets.push({
+      reps: '',
+      weight: '',
+      duration: '',
+      rest: '',
+    });
+    setFormData({
+      ...formData,
+      exercises: updatedExercises,
+    });
+  };
+
+  const handleRemoveSet = (exerciseIndex, setIndex) => {
+    const updatedExercises = [...formData.exercises];
+    updatedExercises[exerciseIndex].sets = updatedExercises[exerciseIndex].sets.filter(
+      (_, i) => i !== setIndex
+    );
+    setFormData({
+      ...formData,
+      exercises: updatedExercises,
+    });
+  };
+
+  const handleSetChange = (exerciseIndex, setIndex, field, value) => {
+    const updatedExercises = [...formData.exercises];
+    updatedExercises[exerciseIndex].sets[setIndex][field] = value;
+    setFormData({
+      ...formData,
+      exercises: updatedExercises,
+    });
+  };
+
   const handleSubmit = async () => {
     const normalizedExercises = formData.exercises
+      .filter(ex => ex.exercise) // Solo ejercicios con ejercicio seleccionado
       .map((ex, idx) => {
         const sets = (ex.sets || [])
           .map((set) => ({
@@ -179,19 +266,18 @@ const Routines = () => {
             rest: set.rest !== '' && set.rest !== undefined ? Number(set.rest) : undefined,
           }))
           .filter((set) =>
-            set.reps !== undefined &&
-            set.weight !== undefined &&
-            set.duration !== undefined &&
+            set.reps !== undefined ||
+            set.weight !== undefined ||
+            set.duration !== undefined ||
             set.rest !== undefined
           );
-        if (sets.length === 0) return null;
+        
         return {
-          exercise: typeof ex === 'string' ? ex : ex.exercise,
+          exercise: ex.exercise,
           sets,
           order: ex.order !== undefined ? ex.order : idx,
         };
-      })
-      .filter(Boolean);
+      });
 
     const dataToSend = { ...formData, exercises: normalizedExercises };
 
@@ -763,118 +849,344 @@ const Routines = () => {
         <Dialog
           open={openDialog}
           onClose={handleCloseDialog}
-          maxWidth='md'
+          maxWidth='lg'
           fullWidth
           PaperProps={{
-            sx: { borderRadius: 2 }
+            sx: { borderRadius: 2, maxHeight: '90vh' }
           }}
         >
-          <DialogTitle sx={{ pb: 1 }}>
+          <DialogTitle sx={{ pb: 2 }}>
             <Typography variant="h5" sx={{ fontWeight: 600 }}>
               {selectedRoutine ? 'Editar Rutina' : 'Nueva Rutina'}
             </Typography>
           </DialogTitle>
           <Divider />
           <DialogContent sx={{ pt: 3 }}>
-            <Grid container spacing={3}>
+            <Grid container spacing={4}>
+              {/* Información Básica */}
               <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label='Nombre de la rutina'
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
-                  required
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: 2,
-                    },
-                  }}
-                />
+                <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: 'primary.main' }}>
+                  Información Básica
+                </Typography>
+                <Grid container spacing={3}>
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label='Nombre de la rutina'
+                      value={formData.name}
+                      onChange={(e) =>
+                        setFormData({ ...formData, name: e.target.value })
+                      }
+                      required
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: 2,
+                        },
+                      }}
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label='Descripción'
+                      value={formData.description}
+                      onChange={(e) =>
+                        setFormData({ ...formData, description: e.target.value })
+                      }
+                      multiline
+                      rows={3}
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: 2,
+                        },
+                      }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={4}>
+                    <FormControl fullWidth>
+                      <InputLabel>Categoría</InputLabel>
+                      <Select
+                        value={formData.category}
+                        onChange={(e) =>
+                          setFormData({ ...formData, category: e.target.value })
+                        }
+                        sx={{ borderRadius: 2 }}
+                      >
+                        <MenuItem value='strength'>Fuerza</MenuItem>
+                        <MenuItem value='cardio'>Cardio</MenuItem>
+                        <MenuItem value='flexibility'>Flexibilidad</MenuItem>
+                        <MenuItem value='sports'>Deportes</MenuItem>
+                        <MenuItem value='rehabilitation'>Rehabilitación</MenuItem>
+                        <MenuItem value='weight_loss'>Pérdida de peso</MenuItem>
+                        <MenuItem value='muscle_gain'>Ganancia muscular</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12} sm={4}>
+                    <FormControl fullWidth>
+                      <InputLabel>Dificultad</InputLabel>
+                      <Select
+                        value={formData.difficulty}
+                        onChange={(e) =>
+                          setFormData({ ...formData, difficulty: e.target.value })
+                        }
+                        sx={{ borderRadius: 2 }}
+                      >
+                        <MenuItem value='beginner'>Principiante</MenuItem>
+                        <MenuItem value='intermediate'>Intermedio</MenuItem>
+                        <MenuItem value='advanced'>Avanzado</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12} sm={4}>
+                    <TextField
+                      fullWidth
+                      label='Duración estimada (min)'
+                      type='number'
+                      value={formData.estimatedDuration}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          estimatedDuration: parseInt(e.target.value),
+                        })
+                      }
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: 2,
+                        },
+                      }}
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={formData.isPublic}
+                          onChange={(e) =>
+                            setFormData({ ...formData, isPublic: e.target.checked })
+                          }
+                        />
+                      }
+                      label="Hacer rutina pública"
+                    />
+                  </Grid>
+                </Grid>
               </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label='Descripción'
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
-                  multiline
-                  rows={3}
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: 2,
-                    },
-                  }}
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <FormControl
-                  sx={{ width: 130, height: 56 }}
-                >
 
-                  <InputLabel>Categoría</InputLabel>
-                  <Select
-                    value={formData.category}
-                    onChange={(e) =>
-                      setFormData({ ...formData, category: e.target.value })
-                    }
+              {/* Ejercicios */}
+              <Grid item xs={12}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 600, color: 'primary.main' }}>
+                    Ejercicios ({formData.exercises.length})
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    startIcon={<Add />}
+                    onClick={handleAddExercise}
                     sx={{ borderRadius: 2 }}
                   >
-                    <MenuItem value='strength'>Fuerza</MenuItem>
-                    <MenuItem value='cardio'>Cardio</MenuItem>
-                    <MenuItem value='flexibility'>Flexibilidad</MenuItem>
-                    <MenuItem value='sports'>Deportes</MenuItem>
-                    <MenuItem value='rehabilitation'>Rehabilitación</MenuItem>
-                    <MenuItem value='weight_loss'>Pérdida de peso</MenuItem>
-                    <MenuItem value='muscle_gain'>Ganancia muscular</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <FormControl
-                  sx={{ width: 130, height: 56 }}
-                >
-                  <InputLabel>Dificultad</InputLabel>
-                  <Select
-                    value={formData.difficulty}
-                    onChange={(e) =>
-                      setFormData({ ...formData, difficulty: e.target.value })
-                    }
-                    sx={{ borderRadius: 2 }}
-                  >
-                    <MenuItem value='beginner'>Principiante</MenuItem>
-                    <MenuItem value='intermediate'>Intermedio</MenuItem>
-                    <MenuItem value='advanced'>Avanzado</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label='Duración estimada (min)'
-                  type='number'
-                  value={formData.estimatedDuration}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      estimatedDuration: parseInt(e.target.value),
-                    })
-                  }
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: 2,
-                    },
-                  }}
-                />
+                    Agregar Ejercicio
+                  </Button>
+                </Box>
+
+                {formData.exercises.length === 0 ? (
+                  <Paper sx={{ p: 4, textAlign: 'center', backgroundColor: 'grey.50' }}>
+                    <FitnessCenter sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+                    <Typography variant="h6" color="text.secondary" gutterBottom>
+                      No hay ejercicios agregados
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                      Agrega ejercicios para completar tu rutina
+                    </Typography>
+                    <Button
+                      variant="contained"
+                      startIcon={<Add />}
+                      onClick={handleAddExercise}
+                    >
+                      Agregar Primer Ejercicio
+                    </Button>
+                  </Paper>
+                ) : (
+                  <Stack spacing={3}>
+                    {formData.exercises.map((exercise, exerciseIndex) => (
+                      <Accordion key={exerciseIndex} defaultExpanded>
+                        <AccordionSummary
+                          expandIcon={<ExpandMore />}
+                          sx={{
+                            backgroundColor: 'primary.50',
+                            '&:hover': { backgroundColor: 'primary.100' },
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                            <DragIndicator sx={{ mr: 2, color: 'text.secondary' }} />
+                            <Typography variant="h6" sx={{ flexGrow: 1 }}>
+                              {exercise.exerciseName || `Ejercicio ${exerciseIndex + 1}`}
+                            </Typography>
+                            <Chip
+                              label={`${exercise.sets.length} sets`}
+                              size="small"
+                              color="primary"
+                              sx={{ mr: 2 }}
+                            />
+                            <Tooltip title="Eliminar ejercicio">
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveExercise(exerciseIndex);
+                                }}
+                              >
+                                <Delete />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
+                        </AccordionSummary>
+                        <AccordionDetails sx={{ pt: 3 }}>
+                          <Grid container spacing={3}>
+                            {/* Selección de ejercicio */}
+                            <Grid item xs={12}>
+                              <FormControl fullWidth>
+                                <InputLabel>Seleccionar Ejercicio</InputLabel>
+                                <Select
+                                  value={exercise.exercise}
+                                  onChange={(e) =>
+                                    handleExerciseChange(exerciseIndex, 'exercise', e.target.value)
+                                  }
+                                  sx={{ borderRadius: 2 }}
+                                >
+                                  {availableExercises.map((ex) => (
+                                    <MenuItem key={ex._id} value={ex._id}>
+                                      {ex.name}
+                                    </MenuItem>
+                                  ))}
+                                </Select>
+                              </FormControl>
+                            </Grid>
+
+                            {/* Sets */}
+                            <Grid item xs={12}>
+                              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                                  Sets ({exercise.sets.length})
+                                </Typography>
+                                <Button
+                                  size="small"
+                                  startIcon={<AddCircle />}
+                                  onClick={() => handleAddSet(exerciseIndex)}
+                                  variant="outlined"
+                                >
+                                  Agregar Set
+                                </Button>
+                              </Box>
+
+                              {exercise.sets.length === 0 ? (
+                                <Paper sx={{ p: 3, textAlign: 'center', backgroundColor: 'grey.50' }}>
+                                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                    No hay sets configurados
+                                  </Typography>
+                                  <Button
+                                    size="small"
+                                    startIcon={<AddCircle />}
+                                    onClick={() => handleAddSet(exerciseIndex)}
+                                    variant="contained"
+                                  >
+                                    Agregar Primer Set
+                                  </Button>
+                                </Paper>
+                              ) : (
+                                <TableContainer component={Paper} variant="outlined">
+                                  <Table size="small">
+                                    <TableHead>
+                                      <TableRow>
+                                        <TableCell>Set</TableCell>
+                                        <TableCell>Repeticiones</TableCell>
+                                        <TableCell>Peso (kg)</TableCell>
+                                        <TableCell>Duración (seg)</TableCell>
+                                        <TableCell>Descanso (seg)</TableCell>
+                                        <TableCell width={50}>Acción</TableCell>
+                                      </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                      {exercise.sets.map((set, setIndex) => (
+                                        <TableRow key={setIndex}>
+                                          <TableCell>
+                                            <Chip label={setIndex + 1} size="small" color="primary" />
+                                          </TableCell>
+                                          <TableCell>
+                                            <TextField
+                                              size="small"
+                                              type="number"
+                                              value={set.reps}
+                                              onChange={(e) =>
+                                                handleSetChange(exerciseIndex, setIndex, 'reps', e.target.value)
+                                              }
+                                              sx={{ width: 80 }}
+                                            />
+                                          </TableCell>
+                                          <TableCell>
+                                            <TextField
+                                              size="small"
+                                              type="number"
+                                              value={set.weight}
+                                              onChange={(e) =>
+                                                handleSetChange(exerciseIndex, setIndex, 'weight', e.target.value)
+                                              }
+                                              sx={{ width: 80 }}
+                                            />
+                                          </TableCell>
+                                          <TableCell>
+                                            <TextField
+                                              size="small"
+                                              type="number"
+                                              value={set.duration}
+                                              onChange={(e) =>
+                                                handleSetChange(exerciseIndex, setIndex, 'duration', e.target.value)
+                                              }
+                                              sx={{ width: 80 }}
+                                            />
+                                          </TableCell>
+                                          <TableCell>
+                                            <TextField
+                                              size="small"
+                                              type="number"
+                                              value={set.rest}
+                                              onChange={(e) =>
+                                                handleSetChange(exerciseIndex, setIndex, 'rest', e.target.value)
+                                              }
+                                              sx={{ width: 80 }}
+                                            />
+                                          </TableCell>
+                                          <TableCell>
+                                            <Tooltip title="Eliminar set">
+                                              <IconButton
+                                                size="small"
+                                                color="error"
+                                                onClick={() => handleRemoveSet(exerciseIndex, setIndex)}
+                                              >
+                                                <RemoveCircle />
+                                              </IconButton>
+                                            </Tooltip>
+                                          </TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </TableContainer>
+                              )}
+                            </Grid>
+                          </Grid>
+                        </AccordionDetails>
+                      </Accordion>
+                    ))}
+                  </Stack>
+                )}
               </Grid>
             </Grid>
           </DialogContent>
           <Divider />
-          <DialogActions sx={{ p: 3 }}>
-            <Button onClick={handleCloseDialog} size="large">
+          <DialogActions sx={{ p: 3, gap: 2 }}>
+            <Button onClick={handleCloseDialog} size="large" variant="outlined">
               Cancelar
             </Button>
             <Button
@@ -882,8 +1194,9 @@ const Routines = () => {
               variant='contained'
               size="large"
               sx={{ px: 4 }}
+              disabled={!formData.name.trim()}
             >
-              {selectedRoutine ? 'Actualizar' : 'Crear'}
+              {selectedRoutine ? 'Actualizar Rutina' : 'Crear Rutina'}
             </Button>
           </DialogActions>
         </Dialog>

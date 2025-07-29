@@ -524,6 +524,458 @@ app.post('/exercises', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// Bulk create exercises (for seeding)
+app.post('/exercises/bulk', authenticateToken, async (req, res) => {
+  try {
+    if (!Array.isArray(req.body.exercises)) {
+      return res.status(400).json({ error: 'exercises must be an array' });
+    }
+
+    const exercises = [];
+    for (const exerciseData of req.body.exercises) {
+      const { error } = exerciseSchema_validation.validate(exerciseData);
+      if (error) {
+        return res.status(400).json({ 
+          error: `Validation error for exercise "${exerciseData.name}": ${error.details[0].message}` 
+        });
+      }
+      exercises.push(exerciseData);
+    }
+
+    const createdExercises = await Exercise.insertMany(exercises);
+    logger.info(`Bulk created ${createdExercises.length} exercises`);
+    
+    res.status(201).json({
+      message: `Successfully created ${createdExercises.length} exercises`,
+      exercises: createdExercises
+    });
+  } catch (error) {
+    logger.error('Bulk create exercises error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Seed default exercises
+app.post('/exercises/seed', authenticateToken, async (req, res) => {
+  try {
+    // Check if exercises already exist
+    const existingCount = await Exercise.countDocuments();
+    if (existingCount > 0) {
+      return res.status(400).json({ 
+        error: 'Exercises already exist in database',
+        count: existingCount 
+      });
+    }
+
+    const defaultExercises = [
+      // Chest exercises
+      {
+        name: 'Press de Banca',
+        description: 'Ejercicio fundamental para el desarrollo del pecho, realizado acostado en un banco con barra.',
+        muscleGroups: ['chest'],
+        equipment: ['barbell'],
+        difficulty: 'intermediate',
+        instructions: [
+          'Acuéstate en el banco con los pies firmes en el suelo',
+          'Agarra la barra con las manos separadas al ancho de los hombros',
+          'Baja la barra controladamente hasta el pecho',
+          'Empuja la barra hacia arriba hasta extender completamente los brazos'
+        ],
+        tips: [
+          'Mantén los omóplatos retraídos',
+          'No rebotes la barra en el pecho',
+          'Controla la respiración: inhala al bajar, exhala al subir'
+        ]
+      },
+      {
+        name: 'Flexiones de Pecho',
+        description: 'Ejercicio básico de peso corporal para fortalecer pecho, hombros y tríceps.',
+        muscleGroups: ['chest', 'arms'],
+        equipment: ['bodyweight'],
+        difficulty: 'beginner',
+        instructions: [
+          'Colócate en posición de plancha con las manos al ancho de los hombros',
+          'Mantén el cuerpo recto desde la cabeza hasta los pies',
+          'Baja el cuerpo hasta que el pecho casi toque el suelo',
+          'Empuja hacia arriba hasta la posición inicial'
+        ],
+        tips: [
+          'Mantén el core activado',
+          'No dejes caer las caderas',
+          'Controla el movimiento en ambas fases'
+        ]
+      },
+      {
+        name: 'Aperturas con Mancuernas',
+        description: 'Ejercicio de aislamiento para el pecho usando mancuernas.',
+        muscleGroups: ['chest'],
+        equipment: ['dumbbells'],
+        difficulty: 'intermediate',
+        instructions: [
+          'Acuéstate en un banco con una mancuerna en cada mano',
+          'Extiende los brazos hacia arriba con las palmas enfrentadas',
+          'Baja las mancuernas en arco amplio hasta sentir estiramiento en el pecho',
+          'Regresa a la posición inicial contrayendo el pecho'
+        ],
+        tips: [
+          'Mantén una ligera flexión en los codos',
+          'Controla el peso en todo el rango de movimiento',
+          'No bajes demasiado para evitar lesiones'
+        ]
+      },
+
+      // Back exercises
+      {
+        name: 'Dominadas',
+        description: 'Ejercicio de peso corporal para desarrollar la espalda y bíceps.',
+        muscleGroups: ['back', 'arms'],
+        equipment: ['bodyweight'],
+        difficulty: 'advanced',
+        instructions: [
+          'Cuelga de una barra con agarre pronado, manos al ancho de los hombros',
+          'Activa el core y mantén las piernas ligeramente flexionadas',
+          'Tira del cuerpo hacia arriba hasta que la barbilla pase la barra',
+          'Baja controladamente hasta la posición inicial'
+        ],
+        tips: [
+          'Evita balancearte',
+          'Inicia el movimiento con los músculos de la espalda',
+          'Si no puedes hacer dominadas completas, usa bandas de resistencia'
+        ]
+      },
+      {
+        name: 'Remo con Barra',
+        description: 'Ejercicio compuesto para desarrollar la espalda media y baja.',
+        muscleGroups: ['back'],
+        equipment: ['barbell'],
+        difficulty: 'intermediate',
+        instructions: [
+          'De pie con los pies al ancho de los hombros, sostén la barra',
+          'Inclínate hacia adelante manteniendo la espalda recta',
+          'Tira de la barra hacia el abdomen bajo',
+          'Baja la barra controladamente'
+        ],
+        tips: [
+          'Mantén el core activado',
+          'No uses impulso',
+          'Aprieta los omóplatos al tirar'
+        ]
+      },
+      {
+        name: 'Jalones al Pecho',
+        description: 'Ejercicio en máquina para desarrollar el dorsal ancho.',
+        muscleGroups: ['back'],
+        equipment: ['machine'],
+        difficulty: 'beginner',
+        instructions: [
+          'Siéntate en la máquina con los muslos asegurados',
+          'Agarra la barra con agarre amplio',
+          'Tira de la barra hacia el pecho superior',
+          'Regresa controladamente a la posición inicial'
+        ],
+        tips: [
+          'Inclínate ligeramente hacia atrás',
+          'Enfócate en usar los músculos de la espalda',
+          'No uses impulso'
+        ]
+      },
+
+      // Leg exercises
+      {
+        name: 'Sentadillas',
+        description: 'Ejercicio fundamental para el desarrollo de las piernas y glúteos.',
+        muscleGroups: ['legs'],
+        equipment: ['bodyweight'],
+        difficulty: 'beginner',
+        instructions: [
+          'De pie con los pies al ancho de los hombros',
+          'Baja como si fueras a sentarte en una silla',
+          'Mantén el pecho erguido y las rodillas alineadas con los pies',
+          'Baja hasta que los muslos estén paralelos al suelo',
+          'Empuja a través de los talones para volver arriba'
+        ],
+        tips: [
+          'Mantén el peso en los talones',
+          'No dejes que las rodillas se vayan hacia adentro',
+          'Mantén el core activado'
+        ]
+      },
+      {
+        name: 'Peso Muerto',
+        description: 'Ejercicio compuesto que trabaja toda la cadena posterior.',
+        muscleGroups: ['legs', 'back'],
+        equipment: ['barbell'],
+        difficulty: 'advanced',
+        instructions: [
+          'De pie con la barra frente a ti, pies al ancho de caderas',
+          'Agáchate y agarra la barra con las manos al ancho de los hombros',
+          'Mantén la espalda recta y levanta la barra extendiendo caderas y rodillas',
+          'Termina de pie con los hombros hacia atrás'
+        ],
+        tips: [
+          'Mantén la barra cerca del cuerpo',
+          'No redondees la espalda',
+          'Inicia el movimiento con las caderas'
+        ]
+      },
+      {
+        name: 'Zancadas',
+        description: 'Ejercicio unilateral para piernas y glúteos.',
+        muscleGroups: ['legs'],
+        equipment: ['bodyweight'],
+        difficulty: 'beginner',
+        instructions: [
+          'De pie con los pies juntos',
+          'Da un paso largo hacia adelante',
+          'Baja hasta que ambas rodillas estén a 90 grados',
+          'Empuja con la pierna delantera para volver a la posición inicial'
+        ],
+        tips: [
+          'Mantén el torso erguido',
+          'No dejes que la rodilla delantera pase los dedos del pie',
+          'Alterna las piernas'
+        ]
+      },
+
+      // Shoulder exercises
+      {
+        name: 'Press Militar',
+        description: 'Ejercicio para desarrollar los hombros y core.',
+        muscleGroups: ['shoulders'],
+        equipment: ['barbell'],
+        difficulty: 'intermediate',
+        instructions: [
+          'De pie con los pies al ancho de los hombros',
+          'Sostén la barra a la altura de los hombros',
+          'Empuja la barra directamente hacia arriba',
+          'Baja controladamente a la posición inicial'
+        ],
+        tips: [
+          'Mantén el core activado',
+          'No arquees excesivamente la espalda',
+          'Empuja la cabeza ligeramente hacia adelante al final del movimiento'
+        ]
+      },
+      {
+        name: 'Elevaciones Laterales',
+        description: 'Ejercicio de aislamiento para el deltoides medio.',
+        muscleGroups: ['shoulders'],
+        equipment: ['dumbbells'],
+        difficulty: 'beginner',
+        instructions: [
+          'De pie con una mancuerna en cada mano a los lados',
+          'Levanta los brazos hacia los lados hasta la altura de los hombros',
+          'Mantén una ligera flexión en los codos',
+          'Baja controladamente'
+        ],
+        tips: [
+          'No uses impulso',
+          'Mantén los hombros hacia abajo',
+          'Controla el movimiento en ambas direcciones'
+        ]
+      },
+
+      // Arm exercises
+      {
+        name: 'Curl de Bíceps',
+        description: 'Ejercicio básico para el desarrollo de los bíceps.',
+        muscleGroups: ['arms'],
+        equipment: ['dumbbells'],
+        difficulty: 'beginner',
+        instructions: [
+          'De pie con una mancuerna en cada mano, brazos a los lados',
+          'Mantén los codos pegados al torso',
+          'Flexiona los brazos llevando las mancuernas hacia los hombros',
+          'Baja controladamente'
+        ],
+        tips: [
+          'No balancees el cuerpo',
+          'Mantén los codos fijos',
+          'Controla la fase excéntrica'
+        ]
+      },
+      {
+        name: 'Extensiones de Tríceps',
+        description: 'Ejercicio para desarrollar la parte posterior de los brazos.',
+        muscleGroups: ['arms'],
+        equipment: ['dumbbells'],
+        difficulty: 'beginner',
+        instructions: [
+          'Acostado en un banco, sostén una mancuerna con ambas manos sobre el pecho',
+          'Baja la mancuerna detrás de la cabeza flexionando solo los codos',
+          'Extiende los brazos para volver a la posición inicial'
+        ],
+        tips: [
+          'Mantén los codos fijos',
+          'No uses peso excesivo',
+          'Controla el movimiento'
+        ]
+      },
+      {
+        name: 'Fondos en Paralelas',
+        description: 'Ejercicio de peso corporal para tríceps y pecho inferior.',
+        muscleGroups: ['arms', 'chest'],
+        equipment: ['bodyweight'],
+        difficulty: 'intermediate',
+        instructions: [
+          'Sujétate en las barras paralelas con los brazos extendidos',
+          'Baja el cuerpo flexionando los codos',
+          'Empuja hacia arriba hasta extender completamente los brazos'
+        ],
+        tips: [
+          'Mantén el cuerpo ligeramente inclinado hacia adelante',
+          'No bajes demasiado para evitar lesiones en los hombros',
+          'Controla el movimiento'
+        ]
+      },
+
+      // Core exercises
+      {
+        name: 'Plancha',
+        description: 'Ejercicio isométrico para fortalecer el core.',
+        muscleGroups: ['core'],
+        equipment: ['bodyweight'],
+        difficulty: 'beginner',
+        instructions: [
+          'Colócate en posición de flexión pero apoyado en los antebrazos',
+          'Mantén el cuerpo recto desde la cabeza hasta los pies',
+          'Mantén la posición el tiempo indicado',
+          'Respira normalmente durante el ejercicio'
+        ],
+        tips: [
+          'No dejes caer las caderas',
+          'Mantén el cuello neutro',
+          'Aprieta los glúteos y abdominales'
+        ]
+      },
+      {
+        name: 'Abdominales Crunch',
+        description: 'Ejercicio básico para los músculos abdominales.',
+        muscleGroups: ['core'],
+        equipment: ['bodyweight'],
+        difficulty: 'beginner',
+        instructions: [
+          'Acuéstate boca arriba con las rodillas flexionadas',
+          'Coloca las manos detrás de la cabeza',
+          'Levanta los hombros del suelo contrayendo los abdominales',
+          'Baja controladamente'
+        ],
+        tips: [
+          'No tires del cuello',
+          'Enfócate en la contracción abdominal',
+          'Exhala al subir'
+        ]
+      },
+      {
+        name: 'Mountain Climbers',
+        description: 'Ejercicio dinámico que combina cardio y fortalecimiento del core.',
+        muscleGroups: ['core', 'cardio'],
+        equipment: ['bodyweight'],
+        difficulty: 'intermediate',
+        instructions: [
+          'Comienza en posición de plancha alta',
+          'Lleva una rodilla hacia el pecho',
+          'Cambia rápidamente de pierna',
+          'Mantén un ritmo constante'
+        ],
+        tips: [
+          'Mantén las caderas estables',
+          'No dejes que las caderas suban',
+          'Mantén el core activado'
+        ]
+      },
+
+      // Cardio exercises
+      {
+        name: 'Burpees',
+        description: 'Ejercicio de cuerpo completo que combina fuerza y cardio.',
+        muscleGroups: ['cardio'],
+        equipment: ['bodyweight'],
+        difficulty: 'intermediate',
+        instructions: [
+          'De pie, baja a posición de cuclillas',
+          'Coloca las manos en el suelo y salta los pies hacia atrás',
+          'Haz una flexión',
+          'Salta los pies hacia adelante y salta hacia arriba'
+        ],
+        tips: [
+          'Mantén un ritmo constante',
+          'Modifica el ejercicio si es necesario',
+          'Respira de manera controlada'
+        ]
+      },
+      {
+        name: 'Jumping Jacks',
+        description: 'Ejercicio cardiovascular básico.',
+        muscleGroups: ['cardio'],
+        equipment: ['bodyweight'],
+        difficulty: 'beginner',
+        instructions: [
+          'De pie con los pies juntos y brazos a los lados',
+          'Salta separando los pies y levantando los brazos sobre la cabeza',
+          'Salta de nuevo para volver a la posición inicial',
+          'Repite de manera continua'
+        ],
+        tips: [
+          'Mantén un ritmo constante',
+          'Aterriza suavemente',
+          'Mantén el core activado'
+        ]
+      },
+
+      // Functional exercises
+      {
+        name: 'Thrusters',
+        description: 'Ejercicio funcional que combina sentadilla y press de hombros.',
+        muscleGroups: ['legs', 'shoulders'],
+        equipment: ['dumbbells'],
+        difficulty: 'intermediate',
+        instructions: [
+          'De pie con mancuernas a la altura de los hombros',
+          'Haz una sentadilla completa',
+          'Al subir, empuja las mancuernas hacia arriba',
+          'Baja las mancuernas mientras bajas a la siguiente sentadilla'
+        ],
+        tips: [
+          'Usa el impulso de las piernas para ayudar con el press',
+          'Mantén el core activado',
+          'Controla el ritmo'
+        ]
+      },
+      {
+        name: 'Kettlebell Swings',
+        description: 'Ejercicio dinámico para desarrollar potencia y resistencia.',
+        muscleGroups: ['legs', 'back', 'core'],
+        equipment: ['kettlebell'],
+        difficulty: 'intermediate',
+        instructions: [
+          'De pie con los pies al ancho de los hombros, kettlebell entre las piernas',
+          'Flexiona las caderas y agarra la kettlebell',
+          'Impulsa las caderas hacia adelante para balancear la kettlebell',
+          'Deja que la kettlebell baje entre las piernas y repite'
+        ],
+        tips: [
+          'El movimiento viene de las caderas, no de los brazos',
+          'Mantén la espalda recta',
+          'Aprieta los glúteos en la parte superior del movimiento'
+        ]
+      }
+    ];
+
+    const createdExercises = await Exercise.insertMany(defaultExercises);
+    logger.info(`Seeded ${createdExercises.length} default exercises`);
+    
+    res.status(201).json({
+      message: `Successfully seeded ${createdExercises.length} exercises`,
+      exercises: createdExercises
+    });
+  } catch (error) {
+    logger.error('Seed exercises error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Routine routes
 app.get('/routines', authenticateToken, async (req, res) => {
   try {

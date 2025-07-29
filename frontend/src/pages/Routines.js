@@ -97,6 +97,7 @@ const Routines = () => {
   const [availableExercises, setAvailableExercises] = useState([]);
   const [loadingExercises, setLoadingExercises] = useState(true);
   const [expandedCards, setExpandedCards] = useState({});
+  const [seedingExercises, setSeedingExercises] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -134,7 +135,13 @@ const Routines = () => {
     try {
       setLoadingExercises(true);
       const res = await axios.get('/api/exercises');
-      setAvailableExercises(res.data.exercises || []);
+      const exercises = res.data.exercises || [];
+      setAvailableExercises(exercises);
+      
+      // If no exercises exist, show option to seed
+      if (exercises.length === 0) {
+        console.log('No exercises found, user can seed default exercises');
+      }
     } catch (error) {
       console.error('Error fetching exercises:', error);
     } finally {
@@ -304,6 +311,24 @@ const Routines = () => {
         console.error('Error deleting routine:', error);
         setError('Error al eliminar la rutina');
       }
+    }
+  };
+
+  const handleSeedExercises = async () => {
+    try {
+      setSeedingExercises(true);
+      await axios.post('/api/exercises/seed');
+      await fetchExercises(); // Refresh the exercises list
+      setError(''); // Clear any previous errors
+    } catch (error) {
+      console.error('Error seeding exercises:', error);
+      if (error.response?.data?.error) {
+        setError(error.response.data.error);
+      } else {
+        setError('Error al crear ejercicios de ejemplo');
+      }
+    } finally {
+      setSeedingExercises(false);
     }
   };
 
@@ -1046,22 +1071,49 @@ const Routines = () => {
                           <Grid container spacing={3}>
                             {/* Selección de ejercicio */}
                             <Grid item xs={12}>
-                              <FormControl fullWidth>
-                                <InputLabel>Seleccionar Ejercicio</InputLabel>
-                                <Select
-                                  value={exercise.exercise}
-                                  onChange={(e) =>
-                                    handleExerciseChange(exerciseIndex, 'exercise', e.target.value)
-                                  }
-                                  sx={{ borderRadius: 2 }}
-                                >
-                                  {availableExercises.map((ex) => (
-                                    <MenuItem key={ex._id} value={ex._id}>
-                                      {ex.name}
-                                    </MenuItem>
-                                  ))}
-                                </Select>
-                              </FormControl>
+                              {availableExercises.length > 0 ? (
+                                <FormControl fullWidth>
+                                  <InputLabel>Seleccionar Ejercicio</InputLabel>
+                                  <Select
+                                    value={exercise.exercise}
+                                    onChange={(e) =>
+                                      handleExerciseChange(exerciseIndex, 'exercise', e.target.value)
+                                    }
+                                    sx={{ borderRadius: 2 }}
+                                  >
+                                    {availableExercises.map((ex) => (
+                                      <MenuItem key={ex._id} value={ex._id}>
+                                        <Box>
+                                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                            {ex.name}
+                                          </Typography>
+                                          <Typography variant="caption" color="text.secondary">
+                                            {ex.muscleGroups?.join(', ')} • {ex.difficulty}
+                                          </Typography>
+                                        </Box>
+                                      </MenuItem>
+                                    ))}
+                                  </Select>
+                                </FormControl>
+                              ) : (
+                                <Paper sx={{ p: 3, textAlign: 'center', backgroundColor: 'warning.50', border: '1px solid', borderColor: 'warning.200' }}>
+                                  <Typography variant="h6" color="warning.main" gutterBottom>
+                                    No hay ejercicios disponibles
+                                  </Typography>
+                                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                    Para crear rutinas necesitas tener ejercicios en la base de datos.
+                                  </Typography>
+                                  <Button
+                                    variant="contained"
+                                    color="warning"
+                                    onClick={handleSeedExercises}
+                                    disabled={seedingExercises}
+                                    startIcon={seedingExercises ? <CircularProgress size={20} color="inherit" /> : <Add />}
+                                  >
+                                    {seedingExercises ? 'Creando ejercicios...' : 'Crear ejercicios de ejemplo'}
+                                  </Button>
+                                </Paper>
+                              )}
                             </Grid>
 
                             {/* Sets */}

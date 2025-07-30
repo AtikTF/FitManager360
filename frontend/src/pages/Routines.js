@@ -70,6 +70,7 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
+import CircularProgress from '@mui/material/CircularProgress';
 
 const Routines = () => {
   const { user } = useAuth();
@@ -980,19 +981,6 @@ const Routines = () => {
                           borderRadius: 2,
                         },
                       }}
-                    />
-                  </Grid>
-                  <Grid item xs={12}>
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={formData.isPublic}
-                          onChange={(e) =>
-                            setFormData({ ...formData, isPublic: e.target.checked })
-                          }
-                        />
-                      }
-                      label="Hacer rutina pública"
                     />
                   </Grid>
                 </Grid>

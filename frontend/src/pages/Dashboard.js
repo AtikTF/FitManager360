@@ -11,6 +11,9 @@ import {
   Chip,
   IconButton,
   Divider,
+  Avatar,
+  Stack,
+  alpha,
 } from '@mui/material';
 import {
   FitnessCenter,
@@ -21,6 +24,9 @@ import {
   Timer,
   LocalFireDepartment,
   MonitorWeight,
+  AccessTime,
+  Category,
+  Speed,
 } from '@mui/icons-material';
 import {
   LineChart,
@@ -32,6 +38,7 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
+  Cell,
 } from 'recharts';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -51,6 +58,18 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [progressData, setProgressData] = useState([]);
 
+  // Colores modernos para los gráficos
+  const chartColors = [
+    '#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', 
+    '#10b981', '#3b82f6', '#f97316', '#06b6d4'
+  ];
+
+  const difficultyColors = {
+    beginner: '#10b981',
+    intermediate: '#f59e0b', 
+    advanced: '#ef4444'
+  };
+
   useEffect(() => {
     fetchDashboardData();
     fetchProgressData();
@@ -58,11 +77,8 @@ const Dashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
-      // Obtener rutinas del usuario
       const routinesResponse = await axios.get('/api/routines');
       const routines = routinesResponse.data.routines || [];
-      
-      // Procesar estadísticas de rutinas
       const processedData = processRoutineStats(routines);
       setDashboardData(processedData);
     } catch (error) {
@@ -82,7 +98,6 @@ const Dashboard = () => {
   };
 
   const processRoutineStats = (routines) => {
-    // Estadísticas por categoría
     const categoryStats = {};
     routines.forEach(routine => {
       const category = routine.category || 'sin_categoria';
@@ -93,7 +108,6 @@ const Dashboard = () => {
       count: value
     }));
 
-    // Estadísticas por dificultad
     const difficultyStats = {};
     routines.forEach(routine => {
       const difficulty = routine.difficulty || 'sin_dificultad';
@@ -104,11 +118,10 @@ const Dashboard = () => {
       count: value
     }));
 
-    // Estadísticas por duración (rangos)
     const durationStats = {
-      'corta': 0,    // 0-30 min
-      'media': 0,    // 31-60 min
-      'larga': 0,    // 61+ min
+      'corta': 0,
+      'media': 0,
+      'larga': 0,
     };
     routines.forEach(routine => {
       const duration = routine.estimatedDuration || 0;
@@ -125,7 +138,6 @@ const Dashboard = () => {
       count: value
     }));
 
-    // Rutinas recientes (últimas 5)
     const recentRoutines = routines
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       .slice(0, 5)
@@ -149,12 +161,12 @@ const Dashboard = () => {
       recentRoutines,
     };
   };
+
   const fetchProgressData = async () => {
     try {
       const response = await axios.get(
         '/api/stats/progress/weight?period=weekly&limit=12'
       );
-      // Formatear los datos para el gráfico
       const formattedData =
         response.data.data?.map((item) => ({
           ...item,
@@ -202,148 +214,202 @@ const Dashboard = () => {
     };
     return labels[duration] || duration;
   };
-  const StatCard = ({ title, value, icon, color, subtitle }) => (
+
+  const StatCard = ({ title, value, icon, gradient, subtitle, trend }) => (
     <Card
-      elevation={2}
-      sx={{ height: '100%' }}
+      elevation={0}
+      sx={{
+        height: '100%',
+        background: `linear-gradient(135deg, ${gradient[0]}, ${gradient[1]})`,
+        color: 'white',
+        position: 'relative',
+        overflow: 'hidden',
+        '&:hover': {
+          transform: 'translateY(-4px)',
+          transition: 'transform 0.3s ease-in-out',
+          boxShadow: '0 12px 24px rgba(0,0,0,0.15)',
+        },
+        transition: 'all 0.3s ease-in-out',
+      }}
     >
-      <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-          <IconButton sx={{ color: color, mr: 2 }}>{icon}</IconButton>
-          <Typography
-            variant='h6'
-            component='div'
-          >
+      <CardContent sx={{ position: 'relative', zIndex: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+          <Typography variant='h6' component='div' sx={{ fontWeight: 600 }}>
             {title}
           </Typography>
+          <Avatar
+            sx={{
+              bgcolor: alpha('#ffffff', 0.2),
+              width: 48,
+              height: 48,
+            }}
+          >
+            {icon}
+          </Avatar>
         </Box>
         <Typography
-          variant='h4'
+          variant='h3'
           component='div'
-          sx={{ mb: 1 }}
+          sx={{ mb: 1, fontWeight: 'bold' }}
         >
           {value}
         </Typography>
         {subtitle && (
-          <Typography
-            variant='body2'
-            color='text.secondary'
-          >
+          <Typography variant='body2' sx={{ opacity: 0.9 }}>
             {subtitle}
           </Typography>
         )}
       </CardContent>
+      {/* Elemento decorativo de fondo */}
+      <Box
+        sx={{
+          position: 'absolute',
+          top: -50,
+          right: -50,
+          width: 120,
+          height: 120,
+          borderRadius: '50%',
+          bgcolor: alpha('#ffffff', 0.1),
+          zIndex: 1,
+        }}
+      />
     </Card>
   );
 
-  const GoalCard = ({ goal }) => (
-    <Card
-      elevation={1}
-      sx={{ mb: 2 }}
+  const ModernChart = ({ data, title, dataKey = 'count', colors = chartColors }) => (
+    <Paper
+      elevation={0}
+      sx={{
+        p: 3,
+        borderRadius: 3,
+        background: 'linear-gradient(145deg, #ffffff, #f8fafc)',
+        border: '1px solid',
+        borderColor: 'divider',
+        '&:hover': {
+          boxShadow: '0 8px 25px rgba(0,0,0,0.08)',
+          transition: 'box-shadow 0.3s ease-in-out',
+        },
+      }}
     >
-      <CardContent>
-        <Box
-          sx={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            mb: 1,
-          }}
-        >
-          <Typography variant='h6'>{goal.title}</Typography>
-          <Chip
-            label={goal.type}
-            color='primary'
-            size='small'
+      <Typography
+        variant='h6'
+        gutterBottom
+        sx={{ fontWeight: 600, color: 'text.primary', mb: 3 }}
+      >
+        {title}
+      </Typography>
+      <ResponsiveContainer width='100%' height={280}>
+        <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+          <CartesianGrid strokeDasharray='3 3' stroke='#e2e8f0' />
+          <XAxis 
+            dataKey='_id' 
+            tick={{ fontSize: 12 }}
+            axisLine={{ stroke: '#cbd5e1' }}
           />
-        </Box>
-        <Typography
-          variant='body2'
-          color='text.secondary'
-          sx={{ mb: 2 }}
-        >
-          {goal.description}
-        </Typography>
-        <Box
-          sx={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            mb: 1,
-          }}
-          color='primary'
-        >
-          <Typography variant='body2'>
-            {goal.currentValue} / {goal.targetValue} {goal.unit}
-          </Typography>
-          <Typography
-            variant='body2'
-            color='text.secondary'
-          >
-            {goal.progress}%
-          </Typography>
-        </Box>
-        <LinearProgress
-          variant='determinate'
-          value={goal.progress}
-          sx={{ mb: 1 }}
-        />
-        <Typography
-          variant='body2'
-          color='text.secondary'
-        >
-          Fecha límite: {new Date(goal.targetDate).toLocaleDateString('es-ES')}
-        </Typography>
-      </CardContent>
-    </Card>
+          <YAxis 
+            allowDecimals={false} 
+            tick={{ fontSize: 12 }}
+            axisLine={{ stroke: '#cbd5e1' }}
+          />
+          <Tooltip
+            contentStyle={{
+              backgroundColor: '#1e293b',
+              border: 'none',
+              borderRadius: '12px',
+              color: 'white',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+            }}
+          />
+          <Bar dataKey={dataKey} radius={[8, 8, 0, 0]}>
+            {data.map((entry, index) => (
+              <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </Paper>
   );
 
-  const AchievementCard = ({ achievement }) => (
-    <Card
-      elevation={1}
-      sx={{ mb: 2 }}
-    >
-      <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-          <EmojiEvents sx={{ color: 'gold', mr: 2 }} />
-          <Typography variant='h6'>{achievement.title}</Typography>
-        </Box>
-        <Typography
-          variant='body2'
-          color='text.secondary'
-          sx={{ mb: 1 }}
-        >
-          {achievement.description}
-        </Typography>
-        <Box
-          sx={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <Chip
-            label={`${achievement.points} pts`}
-            color='secondary'
-            size='small'
-          />
-          <Typography
-            variant='body2'
-            color='text.secondary'
-          >
-            {new Date(achievement.unlockedAt).toLocaleDateString('es-ES')}
+  const RoutineCard = ({ routine }) => {
+    const getDifficultyColor = (difficulty) => {
+      const colors = {
+        beginner: '#10b981',
+        intermediate: '#f59e0b',
+        advanced: '#ef4444',
+        sin_dificultad: '#6b7280'
+      };
+      return colors[difficulty] || '#6b7280';
+    };
+
+    return (
+      <Card
+        elevation={0}
+        sx={{
+          mb: 2,
+          borderRadius: 2,
+          border: '1px solid',
+          borderColor: 'divider',
+          transition: 'all 0.3s ease-in-out',
+          '&:hover': {
+            borderColor: 'primary.main',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+            transform: 'translateY(-2px)',
+          },
+        }}
+      >
+        <CardContent sx={{ p: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+            <Typography variant='h6' sx={{ fontWeight: 600, color: 'text.primary' }}>
+              {routine.name}
+            </Typography>
+            <Chip
+              label={getDifficultyLabel(routine.difficulty)}
+              size='small'
+              sx={{
+                bgcolor: alpha(getDifficultyColor(routine.difficulty), 0.1),
+                color: getDifficultyColor(routine.difficulty),
+                fontWeight: 600,
+                border: `1px solid ${alpha(getDifficultyColor(routine.difficulty), 0.3)}`,
+              }}
+            />
+          </Box>
+          
+          <Stack direction='row' spacing={2} sx={{ mb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Category sx={{ fontSize: 16, color: 'text.secondary' }} />
+              <Typography variant='body2' color='text.secondary'>
+                {getCategoryLabel(routine.category)}
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <AccessTime sx={{ fontSize: 16, color: 'text.secondary' }} />
+              <Typography variant='body2' color='text.secondary'>
+                {routine.estimatedDuration} min
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <FitnessCenter sx={{ fontSize: 16, color: 'text.secondary' }} />
+              <Typography variant='body2' color='text.secondary'>
+                {routine.exerciseCount} ejercicios
+              </Typography>
+            </Box>
+          </Stack>
+          
+          <Typography variant='body2' color='text.secondary'>
+            Creada el {new Date(routine.createdAt).toLocaleDateString('es-ES', {
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric'
+            })}
           </Typography>
-        </Box>
-      </CardContent>
-    </Card>
-  );
+        </CardContent>
+      </Card>
+    );
+  };
 
   if (loading) {
     return (
-      <Container
-        maxWidth='lg'
-        sx={{ mt: 4, mb: 4 }}
-      >
+      <Container maxWidth='lg' sx={{ mt: 4, mb: 4 }}>
         <Box
           sx={{
             display: 'flex',
@@ -352,253 +418,148 @@ const Dashboard = () => {
             minHeight: '50vh',
           }}
         >
-          <Typography>Cargando dashboard...</Typography>
+          <Box sx={{ textAlign: 'center' }}>
+            <Typography variant='h6' sx={{ mb: 2, color: 'text.secondary' }}>
+              Cargando dashboard...
+            </Typography>
+            <LinearProgress sx={{ width: 200, borderRadius: 2 }} />
+          </Box>
         </Box>
       </Container>
     );
   }
 
   return (
-    <Container
-      maxWidth='lg'
-      sx={{ mt: 4, mb: 4 }}
-    >
-      <Grid
-        container
-        spacing={3}
-      >
-        {/* Header */}
-        <Grid
-          item
-          xs={12}
-        >
-          <Typography
-            variant='h4'
-            gutterBottom
+    <Container maxWidth='xl' sx={{ mt: 4, mb: 4 }}>
+      <Grid container spacing={4}>
+        {/* Header mejorado */}
+        <Grid item xs={12}>
+          <Box
+            sx={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              borderRadius: 4,
+              p: 4,
+              color: 'white',
+              mb: 2,
+            }}
           >
-            ¡Bienvenido, {user?.profile?.firstName || user?.username}!
-          </Typography>
-          <Typography
-            variant='subtitle1'
-            color='text.secondary'
-          >
-            Email: {user?.email}
-          </Typography>
+            <Typography variant='h3' gutterBottom sx={{ fontWeight: 'bold' }}>
+              ¡Bienvenido, {user?.profile?.firstName || user?.username}! 💪
+            </Typography>
+            <Typography variant='h6' sx={{ opacity: 0.9 }}>
+              {user?.email}
+            </Typography>
+            <Typography variant='body1' sx={{ mt: 2, opacity: 0.8 }}>
+              Aquí tienes un resumen de tu progreso y actividad reciente
+            </Typography>
+          </Box>
         </Grid>
 
-        {/* Estadísticas principales */}
-        <Grid
-          item
-          xs={12}
-          sm={6}
-          md={3}
-        >
+        {/* Estadísticas principales con gradientes */}
+        <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title='Total de Rutinas'
             value={dashboardData.totalRoutines}
             icon={<FitnessCenter />}
-            color='primary.main'
+            gradient={['#667eea', '#764ba2']}
             subtitle='Rutinas creadas'
           />
         </Grid>
-        <Grid
-          item
-          xs={12}
-          sm={6}
-          md={3}
-        >
+        <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title='Categorías'
             value={dashboardData.stats.byCategory.length}
-            icon={<Timeline />}
-            color='green'
-            subtitle='Tipos de categoría'
+            icon={<Category />}
+            gradient={['#f093fb', '#f5576c']}
+            subtitle='Tipos diferentes'
           />
         </Grid>
-        <Grid
-          item
-          xs={12}
-          sm={6}
-          md={3}
-        >
+        <Grid item xs={12} sm={6} md={3}>
           <StatCard
-            title='Dificultades'
+            title='Niveles'
             value={dashboardData.stats.byDifficulty.length}
             icon={<TrendingUp />}
-            color='orange'
-            subtitle='Niveles de dificultad'
+            gradient={['#4facfe', '#00f2fe']}
+            subtitle='Dificultades'
           />
         </Grid>
-        <Grid
-          item
-          xs={12}
-          sm={6}
-          md={3}
-        >
+        <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title='Duraciones'
             value={dashboardData.stats.byDuration.length}
             icon={<Timer />}
-            color='blue'
-            subtitle='Rangos de duración'
+            gradient={['#43e97b', '#38f9d7']}
+            subtitle='Rangos tiempo'
           />
         </Grid>
 
-        {/* Gráficos de distribución */}
-        <Grid
-          item
-          xs={12}
-          md={6}
-        >
-          <Paper sx={{ p: 2 }}>
-            <Typography
-              variant='h6'
-              gutterBottom
-            >
-              Rutinas por Categoría
-            </Typography>
-            <ResponsiveContainer
-              width='100%'
-              height={250}
-            >
-              <BarChart data={dashboardData.stats.byCategory.map(item => ({
-                ...item,
-                _id: getCategoryLabel(item._id)
-              }))}>
-                <CartesianGrid strokeDasharray='3 3' />
-                <XAxis dataKey='_id' />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
-                <Bar
-                  dataKey='count'
-                  fill='#8884d8'
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </Paper>
-        </Grid>
-        <Grid
-          item
-          xs={12}
-          md={6}
-        >
-          <Paper sx={{ p: 2 }}>
-            <Typography
-              variant='h6'
-              gutterBottom
-            >
-              Rutinas por Dificultad
-            </Typography>
-            <ResponsiveContainer
-              width='100%'
-              height={250}
-            >
-              <BarChart data={dashboardData.stats.byDifficulty.map(item => ({
-                ...item,
-                _id: getDifficultyLabel(item._id)
-              }))}>
-                <CartesianGrid strokeDasharray='3 3' />
-                <XAxis dataKey='_id' />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
-                <Bar
-                  dataKey='count'
-                  fill='#82ca9d'
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </Paper>
-        </Grid>
-        <Grid
-          item
-          xs={12}
-          md={6}
-        >
-          <Paper sx={{ p: 2 }}>
-            <Typography
-              variant='h6'
-              gutterBottom
-            >
-              Rutinas por Duración
-            </Typography>
-            <ResponsiveContainer
-              width='100%'
-              height={250}
-            >
-              <BarChart data={dashboardData.stats.byDuration.map(item => ({
-                ...item,
-                _id: getDurationLabel(item._id)
-              }))}>
-                <CartesianGrid strokeDasharray='3 3' />
-                <XAxis dataKey='_id' />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
-                <Bar
-                  dataKey='count'
-                  fill='#ffc658'
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </Paper>
+        {/* Gráficos mejorados */}
+        <Grid item xs={12} lg={6}>
+          <ModernChart
+            data={dashboardData.stats.byCategory.map(item => ({
+              ...item,
+              _id: getCategoryLabel(item._id)
+            }))}
+            title='📊 Distribución por Categoría'
+          />
         </Grid>
 
-        {/* Rutinas recientes */}
-        <Grid
-          item
-          xs={12}
-          md={6}
-        >
-          <Paper sx={{ p: 2 }}>
+        <Grid item xs={12} lg={6}>
+          <ModernChart
+            data={dashboardData.stats.byDifficulty.map(item => ({
+              ...item,
+              _id: getDifficultyLabel(item._id)
+            }))}
+            title='🎯 Distribución por Dificultad'
+            colors={['#10b981', '#f59e0b', '#ef4444']}
+          />
+        </Grid>
+
+        <Grid item xs={12} lg={6}>
+          <ModernChart
+            data={dashboardData.stats.byDuration.map(item => ({
+              ...item,
+              _id: getDurationLabel(item._id)
+            }))}
+            title='⏱️ Distribución por Duración'
+            colors={['#8b5cf6', '#06b6d4', '#f97316']}
+          />
+        </Grid>
+
+        {/* Rutinas recientes mejoradas */}
+        <Grid item xs={12} lg={6}>
+          <Paper
+            elevation={0}
+            sx={{
+              p: 3,
+              borderRadius: 3,
+              background: 'linear-gradient(145deg, #ffffff, #f8fafc)',
+              border: '1px solid',
+              borderColor: 'divider',
+              height: 'fit-content',
+            }}
+          >
             <Typography
               variant='h6'
               gutterBottom
+              sx={{ fontWeight: 600, color: 'text.primary', mb: 3 }}
             >
-              Rutinas Recientes
+              🔥 Rutinas Recientes
             </Typography>
-            <Box sx={{ maxHeight: 300, overflowY: 'auto' }}>
+            <Box sx={{ maxHeight: 400, overflowY: 'auto', pr: 1 }}>
               {dashboardData.recentRoutines.length > 0 ? (
                 dashboardData.recentRoutines.map((routine) => (
-                  <Card
-                    key={routine.id}
-                    elevation={1}
-                    sx={{ mb: 2 }}
-                  >
-                    <CardContent>
-                      <Typography variant='h6'>{routine.name}</Typography>
-                      <Typography
-                        variant='body2'
-                        color='text.secondary'
-                      >
-                        Categoría: {getCategoryLabel(routine.category)}
-                      </Typography>
-                      <Typography
-                        variant='body2'
-                        color='text.secondary'
-                      >
-                        Dificultad: {getDifficultyLabel(routine.difficulty)}
-                      </Typography>
-                      <Typography
-                        variant='body2'
-                        color='text.secondary'
-                      >
-                        Duración: {routine.estimatedDuration} min | Ejercicios: {routine.exerciseCount}
-                      </Typography>
-                      <Typography
-                        variant='body2'
-                        color='text.secondary'
-                      >
-                        Creada: {new Date(routine.createdAt).toLocaleDateString('es-ES')}
-                      </Typography>
-                    </CardContent>
-                  </Card>
+                  <RoutineCard key={routine.id} routine={routine} />
                 ))
               ) : (
-                <Typography
-                  variant='body2'
-                  color='text.secondary'
-                >
-                  No hay rutinas recientes.
-                </Typography>
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <Typography variant='body1' color='text.secondary'>
+                    No hay rutinas recientes
+                  </Typography>
+                  <Typography variant='body2' color='text.secondary' sx={{ mt: 1 }}>
+                    ¡Crea tu primera rutina para empezar!
+                  </Typography>
+                </Box>
               )}
             </Box>
           </Paper>

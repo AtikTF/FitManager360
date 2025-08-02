@@ -58,15 +58,24 @@ mongoose.connect(
   {
     useNewUrlParser: true,
     useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000,
   }
 );
 
 mongoose.connection.on('connected', () => {
   logger.info('Connected to MongoDB');
+  console.log('Routine Service: MongoDB connected successfully');
 });
 
 mongoose.connection.on('error', (err) => {
   logger.error('MongoDB connection error:', err);
+  console.error('Routine Service: MongoDB connection error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+  logger.warn('MongoDB disconnected');
+  console.warn('Routine Service: MongoDB disconnected');
 });
 
 // Exercise Schema

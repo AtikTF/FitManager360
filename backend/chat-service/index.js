@@ -55,15 +55,24 @@ app.use(express.json());
 // MongoDB connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/fitmanager_chat', {
   useNewUrlParser: true,
-  useUnifiedTopology: true
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 45000,
 });
 
 mongoose.connection.on('connected', () => {
   logger.info('Connected to MongoDB');
+  console.log('Chat Service: MongoDB connected successfully');
 });
 
 mongoose.connection.on('error', (err) => {
   logger.error('MongoDB connection error:', err);
+  console.error('Chat Service: MongoDB connection error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+  logger.warn('MongoDB disconnected');
+  console.warn('Chat Service: MongoDB disconnected');
 });
 
 // Chat Room Schema

@@ -59,15 +59,24 @@ mongoose.connect(
   {
     useNewUrlParser: true,
     useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000,
   }
 );
 
 mongoose.connection.on('connected', () => {
   logger.info('Connected to MongoDB');
+  console.log('MongoDB connected successfully');
 });
 
 mongoose.connection.on('error', (err) => {
   logger.error('MongoDB connection error:', err);
+  console.error('MongoDB connection error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+  logger.warn('MongoDB disconnected');
+  console.warn('MongoDB disconnected');
 });
 
 // User Schema
@@ -262,8 +271,15 @@ app.get('/health', (req, res) => {
 // Register
 app.post('/register', async (req, res) => {
   try {
+    console.log('Registration request received:', {
+      username: req.body.username,
+      email: req.body.email,
+      hasProfile: !!req.body.profile
+    });
+
     const { error } = registerSchema.validate(req.body);
     if (error) {
+      console.log('Validation error:', error.details[0].message);
       return res.status(400).json({ error: error.details[0].message });
     }
 
@@ -275,6 +291,7 @@ app.post('/register', async (req, res) => {
     });
 
     if (existingUser) {
+      console.log('User already exists:', existingUser.email);
       return res.status(409).json({ error: 'User already exists' });
     }
 
@@ -289,6 +306,7 @@ app.post('/register', async (req, res) => {
     });
 
     await user.save();
+    console.log('User created successfully:', user._id);
 
     // Generate token
     const token = generateToken(user);
@@ -304,11 +322,16 @@ app.post('/register', async (req, res) => {
         email: user.email,
         profile: user.profile,
         role: user.role,
+        createdAt: user.createdAt,
       },
     });
   } catch (error) {
+    console.error('Registration error details:', error);
     logger.error('Registration error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 

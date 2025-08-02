@@ -122,6 +122,7 @@ const Register = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setBodyMetricsError('');
 
     // Validation
     if (formData.password !== formData.confirmPassword) {
@@ -160,6 +161,7 @@ const Register = () => {
       // 2. Si registro exitoso y hay datos de peso, crear body metrics
       if (result.success && profileData.weight) {
         try {
+          const token = localStorage.getItem('token');
           const bodyMetrics = {
             weight: profileData.weight,
             bodyFat: profileData.bodyFat,
@@ -169,7 +171,7 @@ const Register = () => {
           };
           await axios.post('/api/stats/body-metrics', bodyMetrics, {
             headers: {
-              Authorization: `Bearer ${result.token}`,
+              Authorization: `Bearer ${token}`,
             },
           });
         } catch (err) {
@@ -186,6 +188,7 @@ const Register = () => {
         setError(result.error);
       }
     } catch (error) {
+      console.error('Registration error:', error);
       setError('Error de conexión. Intenta nuevamente.');
     } finally {
       setLoading(false);
@@ -549,7 +552,8 @@ const Register = () => {
                     {/* Step 1: Personal Information */}
                     {activeStep === 1 && (
                       <Fade in={true} timeout={500}>
-                        <Grid container spacing={3}>
+                        <Box>
+                          <Grid container spacing={3}>
                           <Grid item xs={12} sm={6}>
                             <TextField
                               fullWidth
@@ -763,11 +767,12 @@ const Register = () => {
                               </Select>
                             </FormControl>
                           </Grid>
-                        </Grid>
+                          </Grid>
+                        </Box>
                       </Fade>
                     )}
-                  </Box>
                 </Box>
+              </Box>
 
                 {/* Navigation Buttons */}
                 <Box 
@@ -794,7 +799,7 @@ const Register = () => {
                   <Box sx={{ display: 'flex', gap: 2 }}>
                     {activeStep === steps.length - 1 ? (
                       <Button
-                        type='submit'
+                        onClick={handleSubmit}
                         variant='contained'
                         size='large'
                         disabled={loading}

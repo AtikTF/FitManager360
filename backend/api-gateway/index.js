@@ -83,6 +83,9 @@ const services = {
 // Generic proxy function - FIXED VERSION
 const proxyRequest = async (req, res, serviceUrl, serviceName) => {
   try {
+    console.log(`[${serviceName}] Incoming request: ${req.method} ${req.originalUrl}`);
+    console.log(`[${serviceName}] Request body:`, req.body);
+
     let targetPath;
 
     // Usar req.url si fue modificada (por ejemplo, para admin), si no usar originalUrl
@@ -135,6 +138,7 @@ const proxyRequest = async (req, res, serviceUrl, serviceName) => {
     const url = serviceUrl + targetPath;
 
     logger.info(`${serviceName} service request: ${req.method} ${url}`);
+    console.log(`[${serviceName}] Final URL: ${url}`);
 
     // Clean headers to avoid issues with axios
     const cleanHeaders = {
@@ -169,15 +173,25 @@ const proxyRequest = async (req, res, serviceUrl, serviceName) => {
     const response = await axios(config);
 
     logger.info(`${serviceName} service response: ${response.status}`);
+    console.log(`[${serviceName}] Response status: ${response.status}`);
     res.status(response.status).json(response.data);
   } catch (error) {
+    console.error(`[${serviceName}] Error details:`, {
+      message: error.message,
+      status: error.response?.status,
+      data: error.response?.data,
+      url: error.config?.url
+    });
     logger.error(`${serviceName} service error:`, error.message);
 
     if (error.response) {
+      console.log(`[${serviceName}] Error response:`, error.response.data);
       res.status(error.response.status).json(error.response.data);
     } else if (error.code === 'ECONNREFUSED') {
+      console.log(`[${serviceName}] Service unavailable`);
       res.status(503).json({ error: `${serviceName} service unavailable` });
     } else {
+      console.log(`[${serviceName}] Internal server error:`, error.message);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
